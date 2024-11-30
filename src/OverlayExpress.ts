@@ -1,365 +1,207 @@
-import express from 'express'
-import bodyParser from 'body-parser'
-import { Engine, KnexStorage, LookupService, TopicManager } from '@bsv/overlay'
-import { ARC, MerklePath, STEAK, TaggedBEEF, WhatsOnChain } from '@bsv/sdk'
-import Knex from 'knex'
-import { MongoClient, Db } from 'mongodb'
-import makeUserInterface from './makeUserInterface.js'
-import * as DiscoveryServices from '@bsv/overlay-discovery-services'
+import express from 'express';
+import bodyParser from 'body-parser';
+import { Engine, KnexStorage, LookupService, TopicManager } from '@bsv/overlay';
+import { ARC, ChainTracker, MerklePath, STEAK, TaggedBEEF, WhatsOnChain } from '@bsv/sdk';
+import Knex from 'knex';
+import { MongoClient, Db } from 'mongodb';
+import * as DiscoveryServices from '@bsv/overlay-discovery-services';
 
 /**
- * Overlay Express class
+ * OverlayExpress Class
+ *
+ * A configurable builder-based system for setting up and managing an Express server
+ * integrated with BSV Overlay services.
  */
 export default class OverlayExpress {
-  app: express.Application
-  logger: typeof console = console
-  port: number = 3000
-  engine: Engine | undefined = undefined
-  knex: Knex.Knex | undefined = undefined
-  migrateKey: string | undefined
-  autoHandleMigrations: boolean = true
-  enableGASPSync: boolean = true
-  arcApiKey: string | undefined = undefined
-  mongoDb: Db | undefined = undefined
-  managers: Record<string, TopicManager> = {}
-  services: Record<string, LookupService> = {}
+  app: express.Application;
+  port: number = 3000;
+  logger: typeof console = console;
+
+  knex?: Knex.Knex;
+  mongoDb?: Db;
+  engine?: Engine;
+
+  private topicManagers: Record<string, TopicManager> = {};
+  private lookupServices: Record<string, LookupService> = {};
+  private network: 'main' | 'test' = 'main';
+  private chainTracker: ChainTracker;
+  private arcApiKey?: string;
+  private enableGASPSync: boolean = true;
+  private migrateKey?: string;
+  private autoHandleMigrations: boolean = true;
 
   constructor(
-    public name: string,
-    public privateKey: string,
-    public hostingURL: string
+    private readonly name: string,
+    private readonly privateKey: string,
+    private readonly hostingURL: string
   ) {
-    this.app = express()
-    this.logger.log(`${name} constructed`)
+    this.app = express();
+    this.chainTracker = new WhatsOnChain(this.network);
+    this.logger.log(`${name} OverlayExpress instance created.`);
   }
 
-  // Configure Knex
+  /**
+   * Configures the SQL database using Knex.
+   *
+   * @param config - Knex configuration object
+   */
   async configureKnex(config: Knex.Knex.Config) {
-    this.knex = Knex(config)
-    this.logger.log('Knex successfully configured.')
+    this.knex = Knex(config);
+    this.logger.log('Knex configured.');
   }
 
-  // Configure Mongo
+  /**
+   * Configures the MongoDB connection.
+   *
+   * @param connectionString - MongoDB connection string
+   */
   async configureMongo(connectionString: string) {
-    const mongoClient = new MongoClient(connectionString)
-    await mongoClient.connect()
-    const db = mongoClient.db(`${this.name}_lookup_services`)
-    this.mongoDb = db
-    this.logger.log('MongoDB successfully configured and connected.')
+    const mongoClient = new MongoClient(connectionString);
+    await mongoClient.connect();
+    this.mongoDb = mongoClient.db(`${this.name}_lookup_services`);
+    this.logger.log('MongoDB connected.');
   }
 
+  /**
+   * Adds a topic manager to the system.
+   *
+   * @param name - Identifier for the topic manager
+   * @param manager - Instance of the topic manager
+   */
   configureTopicManager(name: string, manager: TopicManager) {
-    this.managers[name] = manager
-    this.logger.log(`Configured topic manager ${name}`)
+    this.topicManagers[name] = manager;
+    this.logger.log(`Topic Manager "${name}" configured.`);
   }
 
+  /**
+   * Adds a lookup service to the system.
+   *
+   * @param name - Identifier for the lookup service
+   * @param service - Instance of the lookup service
+   */
   configureLookupService(name: string, service: LookupService) {
-    this.services[name] = service
-    this.logger.log(`Configured lookup service ${name}`)
+    this.lookupServices[name] = service;
+    this.logger.log(`Lookup Service "${name}" configured.`);
   }
 
-  configureLookupServiceWithKnex(name: string, serviceFactory: (knex: Knex.Knex) => LookupService) {
-    this.ensureKnex()
-    this.services[name] = serviceFactory(this.knex as Knex.Knex)
-    this.logger.log(`Configured lookup service ${name}`)
+  /**
+   * Configures a lookup service with a Knex-based storage provider.
+   *
+   * @param name - Identifier for the lookup service
+   * @param factory - Factory function to create the lookup service
+   */
+  configureLookupServiceWithKnex(name: string, factory: (knex: Knex.Knex) => LookupService) {
+    if (!this.knex) throw new Error('Knex must be configured first.');
+    this.lookupServices[name] = factory(this.knex);
+    this.logger.log(`Lookup Service "${name}" configured with Knex.`);
   }
 
-  configureLookupServiceWithMongo(name: string, serviceFactory: (mongoDb: Db) => LookupService) {
-    this.ensureMongo()
-    this.services[name] = serviceFactory(this.mongoDb as Db)
-    this.logger.log(`Configured lookup service ${name}`)
+  /**
+   * Configures a lookup service with a MongoDB-based storage provider.
+   *
+   * @param name - Identifier for the lookup service
+   * @param factory - Factory function to create the lookup service
+   */
+  configureLookupServiceWithMongo(name: string, factory: (mongoDb: Db) => LookupService) {
+    if (!this.mongoDb) throw new Error('MongoDB must be configured first.');
+    this.lookupServices[name] = factory(this.mongoDb);
+    this.logger.log(`Lookup Service "${name}" configured with MongoDB.`);
   }
 
-  // Configure Engine
-  async configureEngine(autoConfigureShipSlap = true) {
-    this.ensureKnex()
+  /**
+   * Configures the Overlay Engine with its topic managers and lookup services.
+   *
+   * @param autoConfigureDefaults - Whether to automatically configure default services
+   */
+  async configureEngine(network: 'main' | 'test' = 'main', autoConfigureDefaults = true) {
+    if (!this.knex) throw new Error('Knex must be configured first.');
 
-    if (autoConfigureShipSlap) {
-      this.configureTopicManager('tm_ship', new DiscoveryServices.SHIPTopicManager())
-      this.configureTopicManager('tm_slap', new DiscoveryServices.SLAPTopicManager())
+    if (autoConfigureDefaults) {
+      this.configureTopicManager('tm_ship', new DiscoveryServices.SHIPTopicManager());
+      this.configureTopicManager('tm_slap', new DiscoveryServices.SLAPTopicManager());
       this.configureLookupServiceWithMongo('ls_ship', (db) => new DiscoveryServices.SHIPLookupService(
         new DiscoveryServices.SHIPStorage(db)
-      ))
+      ));
       this.configureLookupServiceWithMongo('ls_slap', (db) => new DiscoveryServices.SLAPLookupService(
         new DiscoveryServices.SLAPStorage(db)
-      ))
+      ));
     }
 
-    let syncConfig: Record<string, false> = {}
+    const storage = new KnexStorage(this.knex);
+    const syncConfig: Record<string, false> = {};
+
     if (!this.enableGASPSync) {
-      for (const manager of Object.keys(this.managers)) {
-        syncConfig[manager] = false
-      }
+      Object.keys(this.topicManagers).forEach((manager) => {
+        syncConfig[manager] = false;
+      });
     }
 
-    const storage = new KnexStorage(this.knex as Knex.Knex)
     this.engine = new Engine(
-      this.managers,
-      this.services,
+      this.topicManagers,
+      this.lookupServices,
       storage,
-      new WhatsOnChain(),
+      this.chainTracker,
       this.hostingURL,
       undefined,
       undefined,
-      this.arcApiKey ? new ARC('https://arc.taal.com', {
-        apiKey: this.arcApiKey
-      }) : undefined,
+      this.arcApiKey ? new ARC('https://arc.taal.com', { apiKey: this.arcApiKey }) : undefined,
       new DiscoveryServices.LegacyNinjaAdvertiser(this.privateKey, 'https://dojo.babbage.systems', this.hostingURL),
       syncConfig
-    )
-    this.logger.log('Engine has been configured.')
+    );
+
+    this.logger.log('Overlay Engine configured.');
   }
 
-  private ensureKnex() {
-    if (typeof this.knex === 'undefined') {
-      throw new Error('You\'ll need to configure your SQL database with the .configureKnex() method first!')
-    }
-  }
-
-  private ensureMongo() {
-    if (typeof this.mongoDb === 'undefined') {
-      throw new Error('You\'ll need to configure your MongoDB connection with the .configureMongo() method first!')
-    }
-  }
-
-  private ensureEngine() {
-    if (typeof this.engine === 'undefined') {
-      throw new Error('You\'ll need to configure your Overlay Services engine with the .configureEngine() method first!')
-    }
-  }
-
+  /**
+   * Starts the Express server and initializes the Overlay Engine.
+   */
   async start() {
-    this.ensureEngine()
-    this.ensureKnex()
-    const engine = this.engine as Engine
-    const knex = this.knex as Knex.Knex
+    if (!this.engine) throw new Error('Engine must be configured first.');
+    if (!this.knex) throw new Error('Knex must be configured first.');
 
-    this.app.use(bodyParser.json({ limit: '1gb', type: 'application/json' }))
-    this.app.use(bodyParser.raw({ limit: '1gb', type: 'application/octet-stream' }))
+    this.app.use(bodyParser.json({ limit: '1gb' }));
+    this.app.use(bodyParser.raw({ limit: '1gb', type: 'application/octet-stream' }));
 
-    // This allows the API to be used everywhere when CORS is enforced
     this.app.use((req, res, next) => {
-      res.header('Access-Control-Allow-Origin', '*')
-      res.header('Access-Control-Allow-Headers', '*')
-      res.header('Access-Control-Allow-Methods', '*')
-      res.header('Access-Control-Expose-Headers', '*')
-      res.header('Access-Control-Allow-Private-Network', 'true')
-      if (req.method === 'OPTIONS') {
-        res.sendStatus(200)
-      } else {
-        next()
+      res.header('Access-Control-Allow-Origin', '*');
+      res.header('Access-Control-Allow-Headers', '*');
+      res.header('Access-Control-Allow-Methods', '*');
+      if (req.method === 'OPTIONS') res.sendStatus(200);
+      else next();
+    });
+
+    this.app.get('/listTopicManagers', async (_, res) => {
+      try {
+        const result = await this.engine?.listTopicManagers();
+        res.status(200).json(result);
+      } catch (error) {
+        this.handleError(res, error);
       }
-    })
+    });
 
-    // TODO
-    this.app.get('/', (req, res) => {
-      res.set('content-type', 'text/html')
-      res.send(makeUserInterface())
-    })
+    this.app.get('/listLookupServiceProviders', async (_, res) => {
+      try {
+        const result = await this.engine?.listLookupServiceProviders();
+        res.status(200).json(result);
+      } catch (error) {
+        this.handleError(res, error);
+      }
+    });
 
-    // List hosted topic managers and lookup services
-    this.app.get('/listTopicManagers', (_, res) => {
-      (async () => {
-        try {
-          const result = await engine.listTopicManagers()
-          return res.status(200).json(result)
-        } catch (error) {
-          return res.status(400).json({
-            status: 'error',
-            message: error instanceof Error ? error.message : 'An unknown error occurred'
-          })
-        }
-      })().catch(() => {
-        // This catch is for any unforeseen errors in the async IIFE itself
-        res.status(500).json({
-          status: 'error',
-          message: 'Unexpected error'
-        })
-      })
-    })
+    this.app.post('/submit', async (req, res) => {
+      try {
+        const topics = JSON.parse(req.headers['x-topics'] as string);
+        const taggedBEEF: TaggedBEEF = { beef: Array.from(req.body as number[]), topics };
+        await this.engine?.submit(taggedBEEF, (steak: STEAK) => res.status(200).json(steak));
+      } catch (error) {
+        this.handleError(res, error);
+      }
+    });
 
-    this.app.get('/listLookupServiceProviders', (_, res) => {
-      (async () => {
-        try {
-          const result = await engine.listLookupServiceProviders()
-          return res.status(200).json(result)
-        } catch (error) {
-          return res.status(400).json({
-            status: 'error',
-            message: error instanceof Error ? error.message : 'An unknown error occurred'
-          })
-        }
-      })().catch(() => {
-        res.status(500).json({
-          status: 'error',
-          message: 'Unexpected error'
-        })
-      })
-    })
-
-    // Host documentation for the services
-    this.app.get('/getDocumentationForTopicManager', (req, res) => {
-      (async () => {
-        try {
-          const result = await engine.getDocumentationForTopicManager(req.query.manager)
-          res.setHeader('Content-Type', 'text/markdown')
-          return res.status(200).send(result)
-        } catch (error) {
-          return res.status(400).json({
-            status: 'error',
-            message: error instanceof Error ? error.message : 'An unknown error occurred'
-          })
-        }
-      })().catch(() => {
-        res.status(500).json({
-          status: 'error',
-          message: 'Unexpected error'
-        })
-      })
-    })
-
-    this.app.get('/getDocumentationForLookupServiceProvider', (req, res) => {
-      (async () => {
-        try {
-          const result = await engine.getDocumentationForLookupServiceProvider(req.query.lookupServices)
-          return res.status(200).json(result)
-        } catch (error) {
-          return res.status(400).json({
-            status: 'error',
-            message: error instanceof Error ? error.message : 'An unknown error occurred'
-          })
-        }
-      })().catch(() => {
-        res.status(500).json({
-          status: 'error',
-          message: 'Unexpected error'
-        })
-      })
-    })
-
-    // Submit transactions and facilitate lookup requests
-    this.app.post('/submit', (req, res) => {
-      (async () => {
-        try {
-          // Parse out the topics and construct the tagged BEEF
-          const topics = JSON.parse(req.headers['x-topics'] as string)
-          const taggedBEEF: TaggedBEEF = {
-            beef: Array.from(req.body as number[]),
-            topics
-          }
-
-          // Using a callback function, we can just return once our steak is ready
-          // instead of having to wait for all the broadcasts to occur.
-          await engine.submit(taggedBEEF, (steak: STEAK) => {
-            return res.status(200).json(steak)
-          })
-        } catch (error) {
-          console.error(error)
-          return res.status(400).json({
-            status: 'error',
-            message: error instanceof Error ? error.message : 'An unknown error occurred'
-          })
-        }
-      })().catch(() => {
-        res.status(500).json({
-          status: 'error',
-          message: 'Unexpected error'
-        })
-      })
-    })
-
-    this.app.post('/lookup', (req, res) => {
-      (async () => {
-        try {
-          const result = await engine.lookup(req.body)
-          return res.status(200).json(result)
-        } catch (error) {
-          console.error(error)
-          return res.status(400).json({
-            status: 'error',
-            message: error instanceof Error ? error.message : 'An unknown error occurred'
-          })
-        }
-      })().catch(() => {
-        res.status(500).json({
-          status: 'error',
-          message: 'Unexpected error'
-        })
-      })
-    })
-
-    if (this.arcApiKey) {
-      this.app.post('/arc-ingest', (req, res) => {
-        (async () => {
-          try {
-            const merklePath = MerklePath.fromHex(req.body.merklePath)
-            await engine.handleNewMerkleProof(req.body.txid, merklePath, req.body.blockHeight)
-            return res.status(200).json({ status: 'success', message: 'transaction status updated' })
-          } catch (error) {
-            console.error(error)
-            return res.status(400).json({
-              status: 'error',
-              message: error instanceof Error ? error.message : 'An unknown error occurred'
-            })
-          }
-        })().catch(() => {
-          res.status(500).json({
-            status: 'error',
-            message: 'Unexpected error'
-          })
-        })
-      })
+    if (this.autoHandleMigrations) {
+      const result = await this.knex.migrate.latest();
+      this.logger.log('Migrations complete:', result);
     } else {
-      this.logger.warn('Disabling Arc because no Arc API key was provided.')
-    }
-
-    if (this.enableGASPSync) {
-      this.app.post('/requestSyncResponse', (req, res) => {
-        (async () => {
-          try {
-            const topic = req.headers['x-bsv-topic'] as string
-            const response = await engine.provideForeignSyncResponse(req.body, topic)
-            return res.status(200).json(response)
-          } catch (error) {
-            console.error(error)
-            return res.status(400).json({
-              status: 'error',
-              message: error instanceof Error ? error.message : 'An unknown error occurred'
-            })
-          }
-        })().catch(() => {
-          res.status(500).json({
-            status: 'error',
-            message: 'Unexpected error'
-          })
-        })
-      })
-      this.app.post('/requestForeignGASPNode', (req, res) => {
-        (async () => {
-          try {
-            console.log(req.body)
-            const { graphID, txid, outputIndex, metadata } = req.body
-            const response = await engine.provideForeignGASPNode(graphID, txid, outputIndex)
-            return res.status(200).json(response)
-          } catch (error) {
-            console.error(error)
-            return res.status(400).json({
-              status: 'error',
-              message: error instanceof Error ? error.message : 'An unknown error occurred'
-            })
-          }
-        })().catch(() => {
-          res.status(500).json({
-            status: 'error',
-            message: 'Unexpected error'
-          })
-        })
-      })
-    } else {
-      this.logger.warn('GASP sync is disabled.')
-    }
-
-    if (!this.autoHandleMigrations) {
       this.app.post('/migrate', (req, res) => {
         (async () => {
           if (
@@ -367,7 +209,7 @@ export default class OverlayExpress {
             this.migrateKey.length > 10 &&
             req.body.migratekey === this.migrateKey
           ) {
-            const result = await knex.migrate.latest()
+            const result = await this.knex!.migrate.latest()
             res.status(200).json({
               status: 'success',
               result
@@ -380,30 +222,27 @@ export default class OverlayExpress {
             })
           }
         })().catch((error) => {
-          console.error(error)
-          res.status(500).json({
-            status: 'error',
-            message: 'Unexpected error'
-          })
+          this.handleError(res, error)
         })
       })
-    } else {
-      const result = await knex.migrate.latest()
-      this.logger.log('Knex migrations run', result)
     }
 
-    // 404, all other routes are not found.
-    this.app.use((req, res) => {
-      console.log('404', req.url)
-      res.status(404).json({
-        status: 'error',
-        code: 'ERR_ROUTE_NOT_FOUND',
-        description: 'Route not found.'
-      })
-    })
-
     this.app.listen(this.port, () => {
-      this.logger.log(`${this.name} listening on local port ${this.port}`)
-    })
+      this.logger.log(`${this.name} server started on port ${this.port}`);
+    });
+  }
+
+  /**
+   * Handles errors and sends appropriate responses.
+   *
+   * @param res - Express response object
+   * @param error - Error to handle
+   */
+  private handleError(res: express.Response, error: unknown) {
+    this.logger.error(error);
+    res.status(500).json({
+      status: 'error',
+      message: error instanceof Error ? error.message : 'Unexpected error',
+    });
   }
 }
