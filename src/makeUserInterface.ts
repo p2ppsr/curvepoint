@@ -127,7 +127,7 @@ export default () => `<!DOCTYPE html>
 
         window.managerDocumentation = async (manager) => {
           let res = await window.fetch(\`/getDocumentationForTopicManager?manager=\${manager}\`)
-          let docs = await res.json()
+          let docs = await res.text()
           let managerReadme = Convert(docs)
           document.getElementById('documentation_container').innerHTML = managerReadme
           document.getElementById('documentation_title').innerHTML = \`<h1 class="docs_heading">\${manager + ' Topic Manager'}</h1>\`
@@ -135,7 +135,7 @@ export default () => `<!DOCTYPE html>
 
         window.topicDocumentation = async (provider) => {
           let res = await window.fetch(\`/getDocumentationForLookupServiceProvider?lookupServices=\${provider}\`)
-          let docs = await res.json()
+          let docs = await res.text()
           let providerReadme = Convert(docs)
           document.getElementById('documentation_container').innerHTML = providerReadme
           document.getElementById('documentation_title').innerHTML = \`<h1 class="docs_heading">\${provider + ' Lookup Service'}</h1>\`
