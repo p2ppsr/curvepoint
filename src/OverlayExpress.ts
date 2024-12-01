@@ -1,11 +1,19 @@
 import express from 'express'
 import bodyParser from 'body-parser'
-import { Engine, KnexStorage, LookupService, TopicManager } from '@bsv/overlay'
+import { Engine, KnexStorage, LookupService, TopicManager, KnexStorageMigrations } from '@bsv/overlay'
 import { ARC, ChainTracker, MerklePath, STEAK, TaggedBEEF, WhatsOnChain } from '@bsv/sdk'
 import Knex from 'knex'
 import { MongoClient, Db } from 'mongodb'
 import makeUserInterface from './makeUserInterface.js'
 import * as DiscoveryServices from '@bsv/overlay-discovery-services'
+
+/**
+ * Knex database migration.
+ */
+type Migration = {
+  up: (knex: Knex.Knex) => Promise<void>
+  down: (knex: Knex.Knex) => Promise<void>
+}
 
 /**
  * OverlayExpress class provides an Express-based server for hosting Overlay Services.
@@ -25,11 +33,8 @@ export default class OverlayExpress {
   // Knex (SQL) database
   knex: Knex.Knex | undefined = undefined
 
-  // Migrate key for database migrations
-  migrateKey: string | undefined = undefined
-
-  // Whether to automatically handle migrations
-  autoHandleMigrations: boolean = true
+  // Knex migrations to run
+  migrationsToRun: Array<Migration> = []
 
   // MongoDB database
   mongoDb: Db | undefined = undefined
@@ -108,24 +113,6 @@ export default class OverlayExpress {
   }
 
   /**
-   * Configures whether to automatically handle database migrations.
-   * @param autoHandle - true to auto-handle migrations, false to require manual triggering
-   */
-  configureAutoHandleMigrations(autoHandle: boolean) {
-    this.autoHandleMigrations = autoHandle
-    this.logger.log(`Auto handle migrations ${autoHandle ? 'enabled' : 'disabled'}.`)
-  }
-
-  /**
-   * Configures the migrate key for manual database migrations.
-   * @param migrateKey - The migration key
-   */
-  configureMigrateKey(migrateKey: string) {
-    this.migrateKey = migrateKey
-    this.logger.log('Migrate key has been configured.')
-  }
-
-  /**
    * Configures the ARC API key.
    * @param apiKey - The ARC API key
    */
@@ -189,9 +176,11 @@ export default class OverlayExpress {
    * @param name - The name of the Lookup Service
    * @param serviceFactory - A factory function that creates a LookupService instance using Knex
    */
-  configureLookupServiceWithKnex(name: string, serviceFactory: (knex: Knex.Knex) => LookupService) {
+  configureLookupServiceWithKnex(name: string, serviceFactory: (knex: Knex.Knex) => { service: LookupService, migrations: Array<Migration> }) {
     this.ensureKnex()
-    this.services[name] = serviceFactory(this.knex as Knex.Knex)
+    const factoryResult = serviceFactory(this.knex as Knex.Knex)
+    this.services[name] = factoryResult.service
+    this.migrationsToRun.concat(factoryResult.migrations)
     this.logger.log(`Configured lookup service ${name} with Knex`)
   }
 
@@ -234,6 +223,10 @@ export default class OverlayExpress {
     }
 
     const storage = new KnexStorage(this.knex as Knex.Knex)
+    // Always run all Overlay Services migrations at the beginning.
+    for (let i = KnexStorageMigrations.default.length; i >= 0; i--) {
+      this.migrationsToRun.unshift(KnexStorageMigrations.default[i])
+    }
     this.engine = new Engine(
       this.managers,
       this.services,
@@ -524,40 +517,15 @@ export default class OverlayExpress {
       this.logger.warn('GASP sync is disabled.')
     }
 
-    if (!this.autoHandleMigrations) {
-      // Route to manually trigger database migrations
-      this.app.post('/migrate', (req, res) => {
-        (async () => {
-          if (
-            typeof this.migrateKey === 'string' &&
-            this.migrateKey.length > 10 &&
-            req.body.migratekey === this.migrateKey
-          ) {
-            const result = await knex.migrate.latest()
-            res.status(200).json({
-              status: 'success',
-              result
-            })
-          } else {
-            res.status(401).json({
-              status: 'error',
-              code: 'ERR_UNAUTHORIZED',
-              description: 'Access with this key was denied.'
-            })
-          }
-        })().catch((error) => {
-          console.error(error)
-          res.status(500).json({
-            status: 'error',
-            message: 'Unexpected error'
-          })
-        })
-      })
-    } else {
-      // Automatically handle migrations
-      const result = await knex.migrate.latest()
-      this.logger.log('Knex migrations run', result)
-    }
+    // Automatically handle migrations
+    const result = await knex.migrate.latest({
+      migrationSource: {
+        getMigrations(): Promise<{}[]> {
+          // ?????????
+        }
+      }
+    })
+    this.logger.log('Knex migrations run', result)
 
     // 404 handler for all other routes
     this.app.use((req, res) => {
