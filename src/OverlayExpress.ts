@@ -96,6 +96,9 @@ export default class OverlayExpress {
   // ARC API Key
   arcApiKey: string | undefined = undefined
 
+  // Verbose request logging
+  verboseRequestLogging: boolean = false
+
   /**
    * Constructs an instance of OverlayExpress.
    * @param name - The name of the service
@@ -164,6 +167,15 @@ export default class OverlayExpress {
   configureEnableGASPSync(enable: boolean) {
     this.enableGASPSync = enable
     this.logger.log(`GASP synchronization ${enable ? 'enabled' : 'disabled'}.`)
+  }
+
+  /**
+   * Enables or disables verbose request logging.
+   * @param enable - true to enable, false to disable
+   */
+  configureVerboseRequestLogging(enable: boolean) {
+    this.verboseRequestLogging = enable
+    this.logger.log(`Verbose request logging ${enable ? 'enabled' : 'disabled'}.`)
   }
 
   /**
@@ -327,6 +339,30 @@ export default class OverlayExpress {
     this.ensureKnex()
     const engine = this.engine as Engine
     const knex = this.knex as Knex.Knex
+
+    if (this.verboseRequestLogging) {
+      this.app.use((req, res, next) => {
+        const startTime = Date.now();
+
+        // Log incoming request details
+        this.logger.log(`Incoming Request: ${req.method} ${req.originalUrl}`);
+        this.logger.log(`Headers: ${JSON.stringify(req.headers)}`);
+        if (req.body && Object.keys(req.body).length > 0) {
+          this.logger.log(`Request Body: ${JSON.stringify(req.body)}`);
+        }
+
+        // Log outgoing response details after the response is finished
+        res.on('finish', () => {
+          const duration = Date.now() - startTime;
+          this.logger.log(
+            `Outgoing Response: ${req.method} ${req.originalUrl} - Status: ${res.statusCode} - Duration: ${duration}ms`
+          );
+          this.logger.log(`Response Headers: ${JSON.stringify(res.getHeaders())}`);
+        });
+
+        next();
+      });
+    }
 
     this.app.use(bodyParser.json({ limit: '1gb', type: 'application/json' }))
     this.app.use(bodyParser.raw({ limit: '1gb', type: 'application/octet-stream' }))
