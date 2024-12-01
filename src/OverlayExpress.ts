@@ -4,7 +4,7 @@ import { Engine, KnexStorage, LookupService, TopicManager, KnexStorageMigrations
 import { ARC, ChainTracker, MerklePath, STEAK, TaggedBEEF, WhatsOnChain } from '@bsv/sdk'
 import Knex from 'knex'
 import { MongoClient, Db } from 'mongodb'
-import makeUserInterface from './makeUserInterface.js'
+import makeUserInterface, { type UIConfig } from './makeUserInterface.js'
 import * as DiscoveryServices from '@bsv/overlay-discovery-services'
 
 /**
@@ -99,6 +99,9 @@ export default class OverlayExpress {
   // Verbose request logging
   verboseRequestLogging: boolean = false
 
+  // Web UI configuration
+  webUIConfig: UIConfig = {}
+
   /**
    * Constructs an instance of OverlayExpress.
    * @param name - The name of the service
@@ -121,6 +124,15 @@ export default class OverlayExpress {
   configurePort(port: number) {
     this.port = port
     this.logger.log(`Server port set to ${port}`)
+  }
+
+  /**
+   * Configures the web user interface
+   * @param config - Web UI configuration options
+   */
+  configureWebUI(config: UIConfig) {
+    this.webUIConfig = config
+    this.logger.log('Web UI has been configured.')
   }
 
   /**
@@ -384,7 +396,7 @@ export default class OverlayExpress {
     // Serve a static documentation site or user interface
     this.app.get('/', (req, res) => {
       res.set('content-type', 'text/html')
-      res.send(makeUserInterface())
+      res.send(makeUserInterface(this.webUIConfig))
     })
 
     // List hosted topic managers and lookup services
