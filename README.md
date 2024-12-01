@@ -7,23 +7,28 @@ An opinionated but configurable Overlay Services deployment system:
 - Implements a configurable web UI
 - Uses common MySQL and Mongo databases
 - Supports SHIP, SLAP, GASP out of the box (or not)
-- Uses ngrok automatically (or not)
 - Supports Arc callbacks natively (or not)
 
 ## Example Usage
 
+Here's a quick example that uses Ngrok and some common environment variables.
+
 ```typescript
 import OverlayExpress from '@bsv/overlay-express'
+import ngrok from 'ngrok'
+import dotenv from 'dotenv'
+dotenv.config()
 
-;(async () => {
-  const server = new OverlayExpress('Server Name')
-  await server.configureKnex({
-    //...
-  })
-  await server.configureMongo('mongodb://...')
-  await server.configureEngine()
-  await server.start()
-})()
+const main = async () => {
+    const ngrokUrl = await ngrok.connect(3000)
+    console.log(ngrokUrl)
+    const server = new OverlayExpress('Server Name', process.env.SERVER_PRIVATE_KEY!, ngrokUrl)
+    await server.configureKnex(process.env.KNEX_URL!)
+    await server.configureMongo(process.env.MONGO_URL!)
+    await server.configureEngine()
+    await server.start()
+}
+main()
 ```
 
 ## License
