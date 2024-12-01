@@ -11,8 +11,44 @@ import * as DiscoveryServices from '@bsv/overlay-discovery-services'
  * Knex database migration.
  */
 type Migration = {
+  name?: string
   up: (knex: Knex.Knex) => Promise<void>
-  down: (knex: Knex.Knex) => Promise<void>
+  down?: (knex: Knex.Knex) => Promise<void>
+}
+
+/**
+ * In-memory migration source for Knex migrations.
+ * Allows running migrations defined in code rather than files.
+ */
+class InMemoryMigrationSource implements Knex.Knex.MigrationSource<Migration> {
+  constructor(private migrations: Migration[]) { }
+
+  /**
+   * Gets the list of migrations.
+   * @param loadExtensions - Array of file extensions to filter by (not used here)
+   * @returns Promise resolving to the array of migrations
+   */
+  async getMigrations(loadExtensions: readonly string[]): Promise<Migration[]> {
+    return this.migrations
+  }
+
+  /**
+   * Gets the name of a migration.
+   * @param migration - The migration object
+   * @returns The name of the migration
+   */
+  getMigrationName(migration: Migration): string {
+    return migration.name || `Migration at index ${this.migrations.indexOf(migration)}`
+  }
+
+  /**
+   * Gets the migration object.
+   * @param migration - The migration object
+   * @returns Promise resolving to the migration object
+   */
+  getMigration(migration: Migration): Promise<Knex.Knex.Migration> {
+    return Promise.resolve(migration)
+  }
 }
 
 /**
@@ -176,11 +212,14 @@ export default class OverlayExpress {
    * @param name - The name of the Lookup Service
    * @param serviceFactory - A factory function that creates a LookupService instance using Knex
    */
-  configureLookupServiceWithKnex(name: string, serviceFactory: (knex: Knex.Knex) => { service: LookupService, migrations: Array<Migration> }) {
+  configureLookupServiceWithKnex(
+    name: string,
+    serviceFactory: (knex: Knex.Knex) => { service: LookupService; migrations: Array<Migration> }
+  ) {
     this.ensureKnex()
     const factoryResult = serviceFactory(this.knex as Knex.Knex)
     this.services[name] = factoryResult.service
-    this.migrationsToRun.concat(factoryResult.migrations)
+    this.migrationsToRun.push(...factoryResult.migrations)
     this.logger.log(`Configured lookup service ${name} with Knex`)
   }
 
@@ -223,10 +262,9 @@ export default class OverlayExpress {
     }
 
     const storage = new KnexStorage(this.knex as Knex.Knex)
-    // Always run all Overlay Services migrations at the beginning.
-    for (let i = KnexStorageMigrations.default.length; i >= 0; i--) {
-      this.migrationsToRun.unshift(KnexStorageMigrations.default[i])
-    }
+    // Include the KnexStorage migrations
+    this.migrationsToRun = [...KnexStorageMigrations.default, ...this.migrationsToRun]
+
     this.engine = new Engine(
       this.managers,
       this.services,
@@ -452,7 +490,7 @@ export default class OverlayExpress {
             const { txid, merklePath: merklePathHex, blockHeight } = req.body
             const merklePath = MerklePath.fromHex(merklePathHex)
             await engine.handleNewMerkleProof(txid, merklePath, blockHeight)
-            return res.status(200).json({ status: 'success', message: 'transaction status updated' })
+            return res.status(200).json({ status: 'success', message: 'Transaction status updated' })
           } catch (error) {
             console.error(error)
             return res.status(400).json({
@@ -468,7 +506,7 @@ export default class OverlayExpress {
         })
       })
     } else {
-      this.logger.warn('Disabling Arc because no Arc API key was provided.')
+      this.logger.warn('Disabling ARC because no ARC API key was provided.')
     }
 
     if (this.enableGASPSync) {
@@ -518,12 +556,9 @@ export default class OverlayExpress {
     }
 
     // Automatically handle migrations
+    const migrationSource = new InMemoryMigrationSource(this.migrationsToRun)
     const result = await knex.migrate.latest({
-      migrationSource: {
-        getMigrations(): Promise<{}[]> {
-          // ?????????
-        }
-      }
+      migrationSource
     })
     this.logger.log('Knex migrations run', result)
 
