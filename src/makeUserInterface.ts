@@ -52,14 +52,11 @@ export default (config: UIConfig = {}): string => {
       background-color: var(--background-color);
       margin: 0;
       padding: 0;
+      color: var(--primary-color);
     }
 
     h1, h2, h3 {
       font-family: var(--heading-font-family);
-    }
-
-    * {
-      color: var(--primary-color);
     }
 
     a {
@@ -99,26 +96,78 @@ export default (config: UIConfig = {}): string => {
       border-bottom: 1px solid var(--border-color);
     }
 
-    ul {
-      list-style-type: none;
-      padding: 0;
-    }
-
-    li {
+    /* List styles */
+    .list-item {
+      display: flex;
+      align-items: center;
       margin: 0.5em 0;
     }
 
-    li a {
-      display: block;
+    .list-item a {
+      display: flex;
+      align-items: center;
+      width: 100%;
       padding: 0.5em;
       background-color: transparent;
       border-radius: 5px;
       transition: background-color 0.3s;
+      text-decoration: none;
+      color: inherit;
     }
 
-    li a:hover {
+    .list-item a:hover {
       background-color: var(--hover-color);
       cursor: pointer;
+    }
+
+    .list-icon {
+      width: 40px;
+      height: 40px;
+      margin-right: 1em;
+    }
+
+    .list-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .list-title {
+      font-weight: bold;
+    }
+
+    .list-description {
+      font-size: 0.9em;
+      color: var(--secondary-color);
+    }
+
+    /* Detail styles */
+    .detail-header {
+      display: flex;
+      align-items: center;
+      margin-bottom: 1em;
+    }
+
+    .detail-icon {
+      width: 60px;
+      height: 60px;
+      margin-right: 1em;
+    }
+
+    .detail-text {
+      display: flex;
+      flex-direction: column;
+    }
+
+    .detail-title {
+      margin: 0;
+    }
+
+    .detail-description, .detail-version, .detail-info {
+      margin: 0.2em 0;
+    }
+
+    .detail-info a {
+      color: var(--link-color);
     }
 
     /* Responsive design */
@@ -141,6 +190,8 @@ export default (config: UIConfig = {}): string => {
   </style>
   <script src="https://cdn.jsdelivr.net/npm/showdown@2.0.3/dist/showdown.min.js"></script>
   <script>
+    const faviconUrl = '${faviconUrl}';
+
     const showdown = window.showdown;
 
     const Convert = (md) => {
@@ -148,13 +199,30 @@ export default (config: UIConfig = {}): string => {
       return converter.makeHtml(md);
     };
 
+    let managersData = {};
+    let providersData = {};
+
     window.managerDocumentation = async (manager) => {
       try {
         let res = await fetch(\`/getDocumentationForTopicManager?manager=\${manager}\`);
         let docs = await res.text();
         let managerReadme = Convert(docs);
+
+        let managerData = managersData[manager];
+        let iconURL = managerData.iconURL || faviconUrl;
+
         document.getElementById('documentation_container').innerHTML = managerReadme;
-        document.getElementById('documentation_title').innerHTML = \`<h1 class="docs_heading">\${manager} Topic Manager</h1>\`;
+        document.getElementById('documentation_title').innerHTML = \`
+          <div class="detail-header">
+            <img src="\${iconURL}" alt="icon" class="detail-icon">
+            <div class="detail-text">
+              <h1 class="detail-title">\${managerData.name}</h1>
+              <p class="detail-description">\${managerData.shortDescription || ''}</p>
+              \${managerData.version ? '<p class="detail-version">Version: ' + managerData.version + '</p>' : ''}
+              \${managerData.informationURL ? '<p class="detail-info"><a href="' + managerData.informationURL + '" target="_blank">More Information</a></p>' : ''}
+            </div>
+          </div>
+        \`;
       } catch (error) {
         console.error('Error fetching manager documentation:', error);
       }
@@ -165,8 +233,22 @@ export default (config: UIConfig = {}): string => {
         let res = await fetch(\`/getDocumentationForLookupServiceProvider?lookupServices=\${provider}\`);
         let docs = await res.text();
         let providerReadme = Convert(docs);
+
+        let providerData = providersData[provider];
+        let iconURL = providerData.iconURL || faviconUrl;
+
         document.getElementById('documentation_container').innerHTML = providerReadme;
-        document.getElementById('documentation_title').innerHTML = \`<h1 class="docs_heading">\${provider} Lookup Service</h1>\`;
+        document.getElementById('documentation_title').innerHTML = \`
+          <div class="detail-header">
+            <img src="\${iconURL}" alt="icon" class="detail-icon">
+            <div class="detail-text">
+              <h1 class="detail-title">\${providerData.name}</h1>
+              <p class="detail-description">\${providerData.shortDescription || ''}</p>
+              \${providerData.version ? '<p class="detail-version">Version: ' + providerData.version + '</p>' : ''}
+              \${providerData.informationURL ? '<p class="detail-info"><a href="' + providerData.informationURL + '" target="_blank">More Information</a></p>' : ''}
+            </div>
+          </div>
+        \`;
       } catch (error) {
         console.error('Error fetching provider documentation:', error);
       }
@@ -176,10 +258,22 @@ export default (config: UIConfig = {}): string => {
       fetch('/listTopicManagers')
         .then(res => res.json())
         .then(managers => {
+          managersData = managers;
           const managerList = document.getElementById('manager_list');
-          managers.forEach(manager => {
+          Object.keys(managers).forEach(manager => {
+            let managerData = managers[manager];
+            let iconURL = managerData.iconURL || faviconUrl;
             let li = document.createElement('li');
-            li.innerHTML = \`<a onclick="window.managerDocumentation('\${manager}')">\${manager}</a>\`;
+            li.className = 'list-item';
+            li.innerHTML = \`
+              <a onclick="window.managerDocumentation('\${manager}')">
+                <img src="\${iconURL}" alt="icon" class="list-icon">
+                <div class="list-text">
+                  <span class="list-title">\${managerData.name}</span>
+                  <span class="list-description">\${managerData.shortDescription || ''}</span>
+                </div>
+              </a>
+            \`;
             managerList.appendChild(li);
           });
         })
@@ -192,10 +286,22 @@ export default (config: UIConfig = {}): string => {
       fetch('/listLookupServiceProviders')
         .then(res => res.json())
         .then(providers => {
+          providersData = providers;
           const providerList = document.getElementById('provider_list');
-          providers.forEach(provider => {
+          Object.keys(providers).forEach(provider => {
+            let providerData = providers[provider];
+            let iconURL = providerData.iconURL || faviconUrl;
             let li = document.createElement('li');
-            li.innerHTML = \`<a onclick="window.topicDocumentation('\${provider}')">\${provider}</a>\`;
+            li.className = 'list-item';
+            li.innerHTML = \`
+              <a onclick="window.topicDocumentation('\${provider}')">
+                <img src="\${iconURL}" alt="icon" class="list-icon">
+                <div class="list-text">
+                  <span class="list-title">\${providerData.name}</span>
+                  <span class="list-description">\${providerData.shortDescription || ''}</span>
+                </div>
+              </a>
+            \`;
             providerList.appendChild(li);
           });
         })
@@ -204,6 +310,9 @@ export default (config: UIConfig = {}): string => {
           message.innerText = 'Something went wrong!';
           provider_list.insertBefore(message, provider_list.children[0]);
         });
+
+      // Display default message when no manager or provider is selected
+      document.getElementById('documentation_container').innerHTML = '<p>Please select a manager or service from the left to see details.</p>';
     });
   </script>
 </head>
