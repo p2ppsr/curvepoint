@@ -627,8 +627,23 @@ export default class OverlayExpress {
     })
 
     // Start listening on the configured port
-    this.app.listen(this.port, () => {
-      this.logger.log(`${this.name} listening on local port ${this.port}`)
+    this.app.listen(this.port, async () => {
+      this.logger.log(`${this.name} listening on local port ${this.port} and will now sync advertisements`);
+
+      // The legacy Ninja advertiser has a setLookupEngine method.
+      (this.engine?.advertiser as DiscoveryServices.LegacyNinjaAdvertiser).setLookupEngine(this.engine!)
+
+      await this.engine?.syncAdvertisements()
+
+      if (this.enableGASPSync) {
+        try {
+          await this.engine?.startGASPSync()
+        } catch (e) {
+          console.error('Failed to GASP sync', e)
+        }
+      } else {
+        this.logger.log(`${this.name} will not GASP sync because it has been disabled`)
+      }
     })
   }
 }

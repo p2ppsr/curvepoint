@@ -11,25 +11,53 @@ An opinionated but configurable Overlay Services deployment system:
 
 ## Example Usage
 
-Here's a quick example that uses Ngrok and some common environment variables.
+Here's a quick example:
 
 ```typescript
 import OverlayExpress from '@bsv/overlay-express'
-import ngrok from 'ngrok'
 import dotenv from 'dotenv'
 dotenv.config()
+import { AdmittanceInstructions } from '@bsv/sdk'
 
 const main = async () => {
-    const ngrokUrl = await ngrok.connect(3000)
-    console.log(ngrokUrl)
-    const server = new OverlayExpress('Server Name', process.env.SERVER_PRIVATE_KEY!, ngrokUrl)
+    const server = new OverlayExpress(
+        `Ty's Overlay Service`,
+        process.env.SERVER_PRIVATE_KEY!,
+        process.env.HOSTING_URL!
+    )
+    server.configurePort(8080)
+    server.configureWebUI({
+        backgroundColor: '#000',
+        faviconUrl: 'https://tyweb.us/ty.jpg'
+    })
     await server.configureKnex(process.env.KNEX_URL!)
     await server.configureMongo(process.env.MONGO_URL!)
+    server.configureTopicManager('tm_meter', {
+        identifyAdmissibleOutputs: async (beef: number[], previousCoins: number[]): Promise<AdmittanceInstructions> => {
+            return {
+                outputsToAdmit: [],
+                coinsToRetain: []
+            }
+        },
+        getDocumentation: async (): Promise<string> => {
+            return '# Meter Docs'
+        },
+        getMetaData: async () => {
+            return {
+                name: 'Meter',
+                shortDescription: 'Meters, up and down.'
+            }
+        }
+    })
     await server.configureEngine()
     await server.start()
 }
 main()
 ```
+
+## Full API Docs
+
+Check out [API.md](./API.md) for the API docs.
 
 ## License
 
