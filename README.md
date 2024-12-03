@@ -3,11 +3,14 @@
 BSV BLOCKCHAIN | Overlay Express
 
 An opinionated but configurable Overlay Services deployment system:
-- Uses express for HTTP(S)
-- Implements a configurable web UI
-- Uses common MySQL and Mongo databases
-- Supports SHIP, SLAP, GASP out of the box (or not)
-- Supports Arc callbacks natively (or not)
+- Uses express for HTTP on a given local port
+- Easy setup with just a private key and a hosting URL
+- Import and configure your topic managers the way you want
+- Add lookup services, with easy factories for Mongo and Knex
+- Implements a configurable web UI to show your custom overlay service docs to the world
+- Uses common Knex/SQL and Mongo databases across all services for efficiency
+- Supports SHIP, SLAP, and GASP sync out of the box (or it can be disabled)
+- Supports Arc callbacks natively for production (or disable it for simplicity during local development)
 
 ## Example Usage
 
@@ -17,41 +20,47 @@ Here's a quick example:
 import OverlayExpress from '@bsv/overlay-express'
 import dotenv from 'dotenv'
 dotenv.config()
-import { AdmittanceInstructions } from '@bsv/sdk'
 
+// Hi there! Let's configure Overlay Express!
 const main = async () => {
+
+    // We'll make a new server for our overlay node.
     const server = new OverlayExpress(
-        `Ty's Overlay Service`,
+
+        // Name your overlay node with a one-word lowercase string
+        `testnode`,
+
+        // Provide the private key that gives your node its identity
         process.env.SERVER_PRIVATE_KEY!,
+
+        // Provide the HTTPS URL where your node is available on the internet
         process.env.HOSTING_URL!
     )
+
+    // Decide what port you want the server to listen on.
     server.configurePort(8080)
-    server.configureWebUI({
-        backgroundColor: '#000',
-        faviconUrl: 'https://tyweb.us/ty.jpg'
-    })
+
+    // Connect to your SQL database with Knex
     await server.configureKnex(process.env.KNEX_URL!)
+
+    // Also, be sure to connect to MongoDB
     await server.configureMongo(process.env.MONGO_URL!)
-    server.configureTopicManager('tm_meter', {
-        identifyAdmissibleOutputs: async (beef: number[], previousCoins: number[]): Promise<AdmittanceInstructions> => {
-            return {
-                outputsToAdmit: [],
-                coinsToRetain: []
-            }
-        },
-        getDocumentation: async (): Promise<string> => {
-            return '# Meter Docs'
-        },
-        getMetaData: async () => {
-            return {
-                name: 'Meter',
-                shortDescription: 'Meters, up and down.'
-            }
-        }
-    })
+
+    // Here, you will configure the overlay topic managers and lookup services you want.
+    // - Topic managers decide what outputs can go in your overlay
+    // - Lookup services help people find things in your overlay
+    // - Make use of functions like `configureTopicManager` and `configureLookupServiceWithMongo`
+    // ADD YOUR OVERLAY SERVICES HERE
+
+    // For simple local deployments, sync can be disabled.
+    server.configureEnableGASPSync(false)
+
+    // Lastly, configure the engine and start the server!
     await server.configureEngine()
     await server.start()
 }
+
+// Happy hacking :)
 main()
 ```
 
