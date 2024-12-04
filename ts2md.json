@@ -1,5 +1,5 @@
 {
-  "inputFilename": "mod.ts",
+  "inputFilename": "src/CurvePoint.ts",
   "outputFilename": "./API.md",
   "firstHeadingLevel": 1
 }
