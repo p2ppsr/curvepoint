@@ -1,3 +1,3 @@
-export { default as CurvePoint } from "./src/CurvePoint";
+export { default as CurvePoint } from "./src/CurvePoint.js";
 
 
