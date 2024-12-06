@@ -11,7 +11,7 @@ export class CurvePoint {
 
     async encrypt(
         message: number[],
-        protocolID: [SecurityLevel, string], // Use SecurityLevel here
+        protocolID: [SecurityLevel, string],
         keyID: string,
         counterparties: string[]
     ): Promise<{ encryptedMessage: number[]; header: number[] }> {
@@ -33,21 +33,21 @@ export class CurvePoint {
                     counterparty,
                 });
 
-                const encryptedKey = symmetricKey.encryptKey(publicKey);
+                const encryptedKey = symmetricKey.encrypt(publicKey);
 
-                writer.writeVarInt(counterparty.length);
-                writer.write(Buffer.from(counterparty));
-                writer.writeVarInt(encryptedKey.length);
-                writer.write(encryptedKey);
+                writer.writeVarIntNum(counterparty.length);
+                writer.write(Array.from(Buffer.from(counterparty)));
+                writer.writeVarIntNum(encryptedKey.length);
+                writer.write(encryptedKey as number[]);
             }
 
             const header = writer.toArray();
             return {
-                encryptedMessage,
+                encryptedMessage: encryptedMessage as number[],
                 header,
-            };
+            };            
         } catch (error) {
-            throw new Error(`Encryption failed: ${error.message}`);
+            throw new Error(`Encryption failed: ${(error as Error).message}`);
         }
     }
 
@@ -68,14 +68,33 @@ export class CurvePoint {
             let symmetricKey: SymmetricKey | null = null;
 
             while (!reader.eof()) {
-                const counterpartyLength = reader.readVarInt();
+                const counterpartyLengthArray = reader.readVarInt();
+                const counterpartyLength = Array.isArray(counterpartyLengthArray)
+                    ? counterpartyLengthArray[0]
+                    : counterpartyLengthArray;
+
+                if (typeof counterpartyLength !== 'number') {
+                    throw new Error('Invalid counterparty length');
+                }
+
                 const counterparty = reader.read(counterpartyLength).toString();
-                const keyLength = reader.readVarInt();
+
+                const keyLengthArray = reader.readVarInt();
+                const keyLength = Array.isArray(keyLengthArray) ? keyLengthArray[0] : keyLengthArray;
+
+                if (typeof keyLength !== 'number') {
+                    throw new Error('Invalid key length');
+                }
+
                 const encryptedKey = reader.read(keyLength);
 
                 if (counterparty === publicKey) {
-                    const decryptedKey = symmetricKey.decryptKey(encryptedKey, publicKey);
-                    symmetricKey = SymmetricKey.fromKey(decryptedKey);
+                    if (!symmetricKey) {
+                        symmetricKey = new SymmetricKey(0);
+                    }
+
+                    const decryptedKey = symmetricKey.decrypt(encryptedKey);
+                    symmetricKey = new SymmetricKey(decryptedKey as number[]);
                     break;
                 }
             }
@@ -85,28 +104,55 @@ export class CurvePoint {
             }
 
             // Decrypt the message
-            return symmetricKey.decrypt(message);
+            return symmetricKey.decrypt(message) as number[];
         } catch (error) {
-            throw new Error(`Decryption failed: ${error.message}`);
+            throw new Error(`Decryption failed: ${(error as Error).message}`);
         }
     }
 
     buildHeader(counterparties: string[], encryptedKeys: number[][]): number[] {
         const writer = new Writer();
         for (let i = 0; i < counterparties.length; i++) {
-            writer.writeVarInt(counterparties[i].length);
-            writer.write(Buffer.from(counterparties[i]));
-            writer.writeVarInt(encryptedKeys[i].length);
-            writer.write(encryptedKeys[i]);
+            const counterparty = counterparties[i];
+            const encryptedKey = encryptedKeys[i];
+        
+            // Validate and process the counterparty
+            if (typeof counterparty === 'string') {
+                const counterpartyBuf = Array.from(Buffer.from(counterparty));
+        
+                // Write the length of the counterparty string as a VarInt
+                writer.write(Writer.varIntNum(counterpartyBuf.length));
+                writer.write(counterpartyBuf); // Write the counterparty data
+            } else {
+                throw new Error(`Invalid counterparty format at index ${i}. Expected a string.`);
+            }
+        
+            // Validate and process the encryptedKey
+            if (Array.isArray(encryptedKey)) {
+                writer.write(Writer.varIntNum(encryptedKey.length));
+                writer.write(encryptedKey);
+            } else if (typeof encryptedKey === 'string') {
+                const keyBuffer = Array.from(Buffer.from(encryptedKey));
+                writer.write(Writer.varIntNum(keyBuffer.length));
+                writer.write(keyBuffer);
+            } else {
+                throw new Error(`Invalid encryptedKey format at index ${i}. Expected an array or string.`);
+            }
         }
+        // Return the complete array representation
         return writer.toArray();
     }
 
     parseHeader(ciphertext: number[]): { header: number[]; message: number[] } {
         const reader = new Reader(ciphertext);
-        const headerLength = reader.readVarInt();
+    
+        const headerLengthArr = reader.readVarInt();
+        const headerLength = headerLengthArr[0];
         const header = reader.read(headerLength);
-        const message = reader.readRemaining();
+        const message = reader.bin.slice(reader.pos);
+        reader.pos = reader.bin.length;
+    
         return { header, message };
     }
+    
 }
