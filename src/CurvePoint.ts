@@ -33,7 +33,7 @@ export class CurvePoint {
                     counterparty,
                 });
 
-                const encryptedKey = symmetricKey.encrypt(publicKey);
+                const encryptedKey = symmetricKey.encrypt(Array.from(Buffer.from(publicKey))); // Ensure publicKey is processed as an array
 
                 writer.writeVarIntNum(counterparty.length);
                 writer.write(Array.from(Buffer.from(counterparty)));
@@ -45,7 +45,7 @@ export class CurvePoint {
             return {
                 encryptedMessage: encryptedMessage as number[],
                 header,
-            };            
+            };
         } catch (error) {
             throw new Error(`Encryption failed: ${(error as Error).message}`);
         }
@@ -53,7 +53,7 @@ export class CurvePoint {
 
     async decrypt(
         ciphertext: number[],
-        protocolID: [number, string],
+        protocolID: [SecurityLevel, string],
         keyID: string
     ): Promise<number[]> {
         try {
@@ -77,7 +77,7 @@ export class CurvePoint {
                     throw new Error('Invalid counterparty length');
                 }
 
-                const counterparty = reader.read(counterpartyLength).toString();
+                const counterparty = reader.read(counterpartyLength)?.toString() ?? '';
 
                 const keyLengthArray = reader.readVarInt();
                 const keyLength = Array.isArray(keyLengthArray) ? keyLengthArray[0] : keyLengthArray;
@@ -88,13 +88,8 @@ export class CurvePoint {
 
                 const encryptedKey = reader.read(keyLength);
 
-                if (counterparty === publicKey) {
-                    if (!symmetricKey) {
-                        symmetricKey = new SymmetricKey(0);
-                    }
-
-                    const decryptedKey = symmetricKey.decrypt(encryptedKey);
-                    symmetricKey = new SymmetricKey(decryptedKey as number[]);
+                if (counterparty === publicKey && encryptedKey) {
+                    symmetricKey = new SymmetricKey(encryptedKey); // Directly initialize SymmetricKey
                     break;
                 }
             }
@@ -115,28 +110,24 @@ export class CurvePoint {
         for (let i = 0; i < counterparties.length; i++) {
             const counterparty = counterparties[i];
             const encryptedKey = encryptedKeys[i];
-        
+
             // Validate and process the counterparty
             if (typeof counterparty === 'string') {
                 const counterpartyBuf = Array.from(Buffer.from(counterparty));
-        
+
                 // Write the length of the counterparty string as a VarInt
-                writer.write(Writer.varIntNum(counterpartyBuf.length));
+                writer.writeVarIntNum(counterpartyBuf.length);
                 writer.write(counterpartyBuf); // Write the counterparty data
             } else {
                 throw new Error(`Invalid counterparty format at index ${i}. Expected a string.`);
             }
-        
+
             // Validate and process the encryptedKey
             if (Array.isArray(encryptedKey)) {
-                writer.write(Writer.varIntNum(encryptedKey.length));
+                writer.writeVarIntNum(encryptedKey.length);
                 writer.write(encryptedKey);
-            } else if (typeof encryptedKey === 'string') {
-                const keyBuffer = Array.from(Buffer.from(encryptedKey));
-                writer.write(Writer.varIntNum(keyBuffer.length));
-                writer.write(keyBuffer);
             } else {
-                throw new Error(`Invalid encryptedKey format at index ${i}. Expected an array or string.`);
+                throw new Error(`Invalid encryptedKey format at index ${i}. Expected an array.`);
             }
         }
         // Return the complete array representation
@@ -145,14 +136,19 @@ export class CurvePoint {
 
     parseHeader(ciphertext: number[]): { header: number[]; message: number[] } {
         const reader = new Reader(ciphertext);
-    
+
         const headerLengthArr = reader.readVarInt();
-        const headerLength = headerLengthArr[0];
-        const header = reader.read(headerLength);
+        const headerLength = headerLengthArr?.[0] ?? 0;
+        const header = reader.read(headerLength) ?? [];
         const message = reader.bin.slice(reader.pos);
-        reader.pos = reader.bin.length;
-    
+
+        if (!header.length || !message.length) {
+            throw new Error('Failed to parse header or message.');
+        }
+
         return { header, message };
     }
-    
 }
+
+
+

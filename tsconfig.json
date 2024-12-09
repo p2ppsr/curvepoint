@@ -1,7 +1,11 @@
 {
   "files": [],
   "compilerOptions": {
-    "esModuleInterop": true
+    "esModuleInterop": true,
+    "baseUrl": "./",
+    "paths": {
+      "@bsv/sdk/*": ["node_modules/@bsv/sdk/*"]
+    }
   },
   "references": [
     {

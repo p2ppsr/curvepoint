@@ -10,9 +10,9 @@
     "declaration": true,
     "declarationMap": true,
     "baseUrl": "./",
-    "strict": true,
+    "strict": false,
     "isolatedModules": true,
-    "strictNullChecks": true,
+    "strictNullChecks": false,
     "downlevelIteration": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -22,12 +22,12 @@
     "experimentalDecorators": true,
     "resolveJsonModule": true,
     "esModuleInterop": true,
+    "noImplicitAny": false,
+    "allowJs": true,
     "paths": {
-      "*": ["node_modules/*", "src/*"]
+      "@bsv/sdk/*": ["node_modules/@bsv/sdk/*"]
     }
-
   },
-  "files": ["mod.ts"],
-  "include": ["src/**/*.ts"],
-  "exclude": ["dist", "*/**/__tests"]
+  "include": ["src/**/*.ts", "_tests/**/*.ts"],
+  "exclude": ["dist", "node_modules"]
 }
