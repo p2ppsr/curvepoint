@@ -6,7 +6,6 @@
     "moduleResolution": "node",
     "rootDir": "./",
     "baseUrl": "./",
-    "outDir": "./dist/cjs",
-    "composite": true
+    "outDir": "./dist/cjs"
   }
 }

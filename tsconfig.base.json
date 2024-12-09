@@ -5,14 +5,11 @@
     "target": "esnext",
     "moduleResolution": "NodeNext",
     "moduleDetection": "force",
-    "rootDir": "./src",
-    "outDir": "./dist",
-    "declaration": true,
-    "declarationMap": true,
+    "rootDir": "./",
     "baseUrl": "./",
-    "strict": false,
+    "strict": true,
     "isolatedModules": true,
-    "strictNullChecks": false,
+    "strictNullChecks": true,
     "downlevelIteration": false,
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
@@ -21,13 +18,9 @@
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "resolveJsonModule": true,
-    "esModuleInterop": true,
-    "noImplicitAny": false,
-    "allowJs": true,
-    "paths": {
-      "@bsv/sdk/*": ["node_modules/@bsv/sdk/*"]
-    }
+    "esModuleInterop": true
   },
-  "include": ["src/**/*.ts", "_tests/**/*.ts"],
-  "exclude": ["dist", "node_modules"]
+  "files": ["mod.ts"],
+  "include": ["src"],
+  "exclude": ["dist", "*/**/__tests"]
 }

@@ -4,7 +4,6 @@
     "rootDir": "./",
     "baseUrl": "./",
     "outDir": "./dist/esm",
-    "allowSyntheticDefaultImports": true,
-    "composite": true
+    "allowSyntheticDefaultImports": true
   }
 }

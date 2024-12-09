@@ -1,9 +1,9 @@
-import PrivateKey from '@bsv/sdk/src/primitives/PrivateKey.js';
-import ProtoWallet from '@bsv/sdk/src/wallet/ProtoWallet.js';
-import { CurvePoint } from '../CurvePoint.js';
-import SymmetricKey from '@bsv/sdk/src/primitives/SymmetricKey.js';
-import { Writer } from '@bsv/sdk/src/primitives/utils.js';
-import { SecurityLevels, SecurityLevel } from '@bsv/sdk/src/wallet/Wallet.interfaces.js';
+import {PrivateKey} from '@bsv/sdk'
+import {ProtoWallet} from '@bsv/sdk';
+import { CurvePoint } from '../CurvePoint';
+import {SymmetricKey} from '@bsv/sdk';
+import { Utils } from '@bsv/sdk';
+import { SecurityLevels, SecurityLevel } from '@bsv/sdk';
 
 describe('CurvePoint Library', () => {
     let participants: { wallet: ProtoWallet; publicKey: string }[];
@@ -53,7 +53,7 @@ describe('CurvePoint Library', () => {
         const validSymmetricKey = SymmetricKey.fromRandom();
         const encryptedMessage = validSymmetricKey.encrypt([1, 2, 3, 4]) as number[];
 
-        const header = new Writer()
+        const header = new Utils.Writer()
             .writeVarIntNum(participants[1].publicKey.length)
             .write(Array.from(Buffer.from(participants[1].publicKey)))
             .writeVarIntNum(validSymmetricKey.toArray().length)
