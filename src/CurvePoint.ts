@@ -1,8 +1,7 @@
 import { Wallet } from '@bsv/sdk';
-import {SymmetricKey} from '@bsv/sdk';
+import { SymmetricKey } from '@bsv/sdk';
 import { Utils } from '@bsv/sdk';
-import {WalletProtocol} from '@bsv/sdk';
-
+import { WalletProtocol } from '@bsv/sdk';
 
 export class CurvePoint {
     private wallet: Wallet;
@@ -18,37 +17,31 @@ export class CurvePoint {
         counterparties: string[]
     ): Promise<{ encryptedMessage: number[]; header: number[] }> {
         try {
-            // Generate a random symmetric key
+            // Step 1: Generate a random symmetric key for encrypting the message.
             const symmetricKey = SymmetricKey.fromRandom();
 
-            // Encrypt the message
+            // Step 2: Encrypt the message payload using the symmetric key.
             const encryptedMessage = symmetricKey.encrypt(message);
 
-            // Build the CurvePoint header
-            const writer = new Utils.Writer();
+            // Step 3: Encrypt the symmetric key for each counterparty using this.wallet.encrypt
+            const encryptedKeys = await Promise.all(
+                counterparties.map(async (counterparty) => {
+                    const encryptedKey = await this.wallet.encrypt({
+                        protocolID,
+                        keyID,
+                        counterparty,
+                        plaintext: symmetricKey.toArray(),
+                    });
+                    return encryptedKey.ciphertext as number[];
+                })
+            );
 
-            for (const counterparty of counterparties) {
-                // Encrypt the symmetric key for each counterparty
-                const { publicKey } = await this.wallet.getPublicKey({
-                    protocolID,
-                    keyID,
-                    counterparty,
-                });
+            // Step 4: Build the header using `buildHeader`.
+            const header = this.buildHeader(counterparties, encryptedKeys);
 
-                const encryptedKey = symmetricKey.encrypt(Array.from(Buffer.from(publicKey))); // Ensure publicKey is processed as an array
-
-                writer.writeVarIntNum(counterparty.length);
-                writer.write(Array.from(Buffer.from(counterparty)));
-                writer.writeVarIntNum(encryptedKey.length);
-                writer.write(encryptedKey as number[]);
-            }
-
-            const header = writer.toArray();
-            return {
-                encryptedMessage: encryptedMessage as number[],
-                header,
-            };
+            return { encryptedMessage: encryptedMessage as number[], header };
         } catch (error) {
+            console.error('Encryption failed:', error);
             throw new Error(`Encryption failed: ${(error as Error).message}`);
         }
     }
@@ -59,98 +52,115 @@ export class CurvePoint {
         keyID: string
     ): Promise<number[]> {
         try {
-            // Parse the header
+            // Step 1: Parse the header and the encrypted message from the ciphertext.
             const { header, message } = this.parseHeader(ciphertext);
-
-            // Get your identity
+    
+            // Step 2: Retrieve the current user's public key.
             const { publicKey } = await this.wallet.getPublicKey({ identityKey: true });
-
-            // Find yourself in the header
+    
+            // Step 3: Parse the header to find the symmetric key for the current user.
             const reader = new Utils.Reader(header);
             let symmetricKey: SymmetricKey | null = null;
-
+    
             while (!reader.eof()) {
-                const counterpartyLengthArray = reader.readVarInt();
-                const counterpartyLength = Array.isArray(counterpartyLengthArray)
-                    ? counterpartyLengthArray[0]
-                    : counterpartyLengthArray;
-
-                if (typeof counterpartyLength !== 'number') {
-                    throw new Error('Invalid counterparty length');
+                const counterpartyLength = reader.readVarIntNum(); // Read counterparty length
+    
+                const counterpartyBytes = reader.read(counterpartyLength); // Read the counterparty data
+    
+                if (!counterpartyBytes || counterpartyBytes.length !== counterpartyLength) {
+                    console.error('Failed to parse counterparty from header.');
+                    continue;
                 }
-
-                const counterparty = reader.read(counterpartyLength)?.toString() ?? '';
-
-                const keyLengthArray = reader.readVarInt();
-                const keyLength = Array.isArray(keyLengthArray) ? keyLengthArray[0] : keyLengthArray;
-
-                if (typeof keyLength !== 'number') {
-                    throw new Error('Invalid key length');
-                }
-
-                const encryptedKey = reader.read(keyLength);
-
-                if (counterparty === publicKey && encryptedKey) {
-                    symmetricKey = new SymmetricKey(encryptedKey); // Directly initialize SymmetricKey
+    
+                // Decode the counterparty as a full hexadecimal string
+                const counterparty = Buffer.from(counterpartyBytes).toString('hex');
+    
+                const keyLength = reader.readVarIntNum(); // Read encrypted key length
+    
+                const encryptedKey = reader.read(keyLength); // Read the encrypted key
+    
+                // Check if the counterparty matches the user's public key
+                if (counterparty === publicKey) {
+                    if (!encryptedKey || encryptedKey.length === 0) {
+                        console.error('No encrypted key found for this counterparty.');
+                        continue;
+                    }
+    
+                    const decryptedResults = await this.wallet.decrypt({
+                        protocolID,           // Protocol to use for decryption
+                        keyID,                // Key ID for identifying the decryption key
+                        ciphertext: encryptedKey, // The encrypted symmetric key
+                    });
+    
+                    const decryptedKeyArray = decryptedResults.plaintext;
+    
+                    symmetricKey = new SymmetricKey(decryptedKeyArray);
                     break;
+                } else {
+                    console.log(`No match for counterparty: ${counterparty}`);
                 }
             }
-
+    
+            // Step 4: Ensure the symmetric key was found.
             if (!symmetricKey) {
-                throw new Error("Your key is not found in the header.");
+                console.error('Symmetric key not found in the header.');
+                throw new Error('Your key is not found in the header.');
             }
-
-            // Decrypt the message
-            return symmetricKey.decrypt(message) as number[];
+    
+            // Step 5: Decrypt the message payload using the symmetric key.
+            const decryptedMessage = symmetricKey.decrypt(message) as number[];
+            return decryptedMessage;
         } catch (error) {
+            console.error('Decryption failed:', error);
             throw new Error(`Decryption failed: ${(error as Error).message}`);
         }
     }
-
+    
     buildHeader(counterparties: string[], encryptedKeys: number[][]): number[] {
         const writer = new Utils.Writer();
+    
+        // Reserve space for the total header length
+        const headerStart = writer.toArray();
+        
         for (let i = 0; i < counterparties.length; i++) {
             const counterparty = counterparties[i];
             const encryptedKey = encryptedKeys[i];
-
-            // Validate and process the counterparty
-            if (typeof counterparty === 'string') {
-                const counterpartyBuf = Array.from(Buffer.from(counterparty));
-
-                // Write the length of the counterparty string as a VarInt
-                writer.writeVarIntNum(counterpartyBuf.length);
-                writer.write(counterpartyBuf); // Write the counterparty data
-            } else {
-                throw new Error(`Invalid counterparty format at index ${i}. Expected a string.`);
-            }
-
-            // Validate and process the encryptedKey
-            if (Array.isArray(encryptedKey)) {
-                writer.writeVarIntNum(encryptedKey.length);
-                writer.write(encryptedKey);
-            } else {
-                throw new Error(`Invalid encryptedKey format at index ${i}. Expected an array.`);
-            }
+    
+            // Encode the counterparty as bytes
+            const counterpartyBytes = Array.from(Buffer.from(counterparty, 'hex'));
+    
+            // Write counterparty data
+            writer.writeVarIntNum(counterpartyBytes.length);
+            writer.write(counterpartyBytes);
+    
+            // Write encrypted key data
+            writer.writeVarIntNum(encryptedKey.length);
+            writer.write(encryptedKey);
         }
-        // Return the complete array representation
-        return writer.toArray();
+    
+        const header = writer.toArray();
+    
+        // Prepend the total header length
+        const finalHeader = [header.length, ...header];
+        return finalHeader;
     }
-
+    
     parseHeader(ciphertext: number[]): { header: number[]; message: number[] } {
         const reader = new Utils.Reader(ciphertext);
-
-        const headerLengthArr = reader.readVarInt();
-        const headerLength = headerLengthArr?.[0] ?? 0;
-        const header = reader.read(headerLength) ?? [];
-        const message = reader.bin.slice(reader.pos);
-
-        if (!header.length || !message.length) {
-            throw new Error('Failed to parse header or message.');
+    
+        // Read the total header length
+        const totalHeaderLength = reader.readVarIntNum();
+    
+        // Validate the header length
+        if (totalHeaderLength > ciphertext.length) {
+            console.error('Malformed ciphertext: Header length exceeds ciphertext size.');
+            throw new Error('Malformed ciphertext.');
         }
-
+    
+        // Extract the header and message
+        const header = reader.read(totalHeaderLength) ?? [];
+        const message = reader.bin.slice(reader.pos);
+    
         return { header, message };
     }
 }
-
-
-
