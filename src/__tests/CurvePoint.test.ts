@@ -46,7 +46,8 @@ describe('CurvePoint Library', () => {
                 const decryptedMessage = await curvePoint.decrypt(
                     [...header, ...encryptedMessage],
                     protocolID,
-                    keyID
+                    keyID,
+                    participant.publicKey // Pass the participant's public key
                 );
                 expect(decryptedMessage).toEqual(message);
                 console.log(`Decryption successful for participant: ${participant.publicKey}`);
@@ -55,7 +56,7 @@ describe('CurvePoint Library', () => {
                 console.error(`Error: ${(error as Error).message}`);
                 throw error;
             }
-        }
+        }        
     });
     
     // test('Fail to decrypt with incorrect key', async () => {
