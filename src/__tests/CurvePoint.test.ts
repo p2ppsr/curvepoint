@@ -25,30 +25,39 @@ describe('CurvePoint Library', () => {
                 })
         );
     });
-
+    
     test('Encrypt and decrypt message successfully', async () => {
-        const curvePoint = new CurvePoint(participants[0].wallet);
+        // Step 1: Create an instance of CurvePoint for the sender
+        const sender = participants[0];
+        const curvePointSender = new CurvePoint(sender.wallet);
         const counterparties = participants.map((p) => p.publicKey);
         const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'exampleProtocol'];
         const keyID = 'exampleKey';
     
-        // Step 1: Encrypt the message
-        const { encryptedMessage, header } = await curvePoint.encrypt(
+        // Step 2: Encrypt the message
+        const { encryptedMessage, header } = await curvePointSender.encrypt(
             message,
             protocolID,
             keyID,
             counterparties
         );
     
-        // Step 2: Test decryption for each participant
+        console.log('Header:', header);
+        console.log('Encrypted Message:', encryptedMessage);
+    
+        // Step 3: Test decryption for each participant
         for (const participant of participants) {
+            // Each participant uses their own instance of CurvePoint with their wallet
+            const curvePointParticipant = new CurvePoint(participant.wallet);
+    
             try {
-                const decryptedMessage = await curvePoint.decrypt(
+                const decryptedMessage = await curvePointParticipant.decrypt(
                     [...header, ...encryptedMessage],
                     protocolID,
-                    keyID,
-                    participant.publicKey // Pass the participant's public key
+                    keyID
                 );
+    
+                // Validate that the decrypted message matches the original
                 expect(decryptedMessage).toEqual(message);
                 console.log(`Decryption successful for participant: ${participant.publicKey}`);
             } catch (error) {
@@ -56,8 +65,9 @@ describe('CurvePoint Library', () => {
                 console.error(`Error: ${(error as Error).message}`);
                 throw error;
             }
-        }        
+        }
     });
+    
     
     // test('Fail to decrypt with incorrect key', async () => {
     //     const protocolID: [SecurityLevel, string] = [SecurityLevels.Counterparty, 'testProtocol'];
@@ -76,7 +86,7 @@ describe('CurvePoint Library', () => {
     //     const fakeKey = 'invalidKey';
 
     //     await expect(
-    //         curvePoint.decrypt([...header, ...encryptedMessage], protocolID, fakeKey)
+    //         curvePoint.decrypt([...header, ...encryptedMessage], protocolID, fakeKey, participants[1].publicKey)
     //     ).rejects.toThrow("Your key is not found in the header.");
     // });
 
@@ -93,7 +103,8 @@ describe('CurvePoint Library', () => {
     //             const decryptedMessage = await curvePoint.decrypt(
     //                 [...header, ...encryptedMessage],
     //                 protocolID,
-    //                 keyID
+    //                 keyID,
+    //                 participant.publicKey
     //             );
     //             expect(decryptedMessage).toEqual([]);
     //         } catch (error) {
@@ -108,17 +119,20 @@ describe('CurvePoint Library', () => {
     //     const curvePoint = new CurvePoint(participants[0].wallet);
     //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'exampleProtocol'];
     //     const keyID = 'exampleKey';
-
+    
+    //     // Create a malformed header
     //     const malformedHeader = new Utils.Writer()
     //         .writeVarIntNum(0) // Invalid counterparty length
     //         .toArray();
-
+    
     //     const malformedCiphertext = [...malformedHeader, ...[5, 6, 7, 8]];
-
+    
+    //     // Expect the decryption to fail with a specific error
     //     await expect(
-    //         curvePoint.decrypt(malformedCiphertext, protocolID, keyID)
+    //         curvePoint.decrypt(malformedCiphertext, protocolID, keyID, participants[0].publicKey)
     //     ).rejects.toThrow('Failed to parse header or message.');
     // });
+    
 
     // test('Encrypt and decrypt with single counterparty', async () => {
     //     // Use participant[1] for encryption (counterparty)
@@ -145,7 +159,8 @@ describe('CurvePoint Library', () => {
     //         const decryptedMessage = await curvePoint.decrypt(
     //             [...header, ...encryptedMessage],
     //             protocolID,
-    //             keyID
+    //             keyID,
+    //             encryptingParticipant.publicKey
     //         );
     
     //         expect(decryptedMessage).toEqual(message);
@@ -234,7 +249,7 @@ describe('CurvePoint Library', () => {
     //     const nonSubCurvePoint = new CurvePoint(participants[1].wallet);
     //     console.log(`Testing decryption for non-subgroup member: ${participants[1].publicKey}`);
     //     await expect(
-    //         nonSubCurvePoint.decrypt([...header, ...encryptedMessage], protocolID, keyID)
+    //         nonSubCurvePoint.decrypt([...header, ...encryptedMessage], protocolID, keyID, participants[1].publicKey)
     //     ).rejects.toThrow('Your key is not found in the header.');
     //     console.log('Non-subgroup member decryption failed as expected.');
     
@@ -251,7 +266,8 @@ describe('CurvePoint Library', () => {
     //             const decryptedMessage = await curvePoint.decrypt(
     //                 [...header, ...encryptedMessage],
     //                 protocolID,
-    //                 keyID
+    //                 keyID,
+    //                 participant.publicKey
     //             );
     //             console.log(`Decryption successful for participant: ${participant.publicKey}`);
     //             expect(decryptedMessage).toEqual(message);
@@ -265,72 +281,63 @@ describe('CurvePoint Library', () => {
     
     
 
-    // test('Partial Revocation', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet); // Use a single instance
-    //     const counterparties = participants.map((p) => p.publicKey);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'revocationProtocol'];
-    //     const keyID = 'revocationKey';
-    
-    //     // Step 1: Encrypt the message with all participants
-    //     const { encryptedMessage, header } = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         counterparties
-    //     );
-    
-    //     // Step 2: Verify all participants can decrypt the message
-    //     for (const participant of participants) {
-    //         try {
-    //             const decryptedMessage = await curvePoint.decrypt(
-    //                 [...header, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(message);
-    //         } catch (error) {
-    //             console.error(`Decryption failed for participant: ${participant.publicKey}`);
-    //             console.error(`Error: ${(error as Error).message}`);
-    //             throw error;
-    //         }
-    //     }
-    
-    //     // Step 3: Revoke access for Participant 1
-    //     console.log(`Revoking access for participant[1]: ${counterparties[1]}`);
-    //     const newHeader = await curvePoint.removeParticipant(header, counterparties[1]);
-    
-    //     // Step 4: Verify only remaining participants can still decrypt the message
-    //     console.log('Decrypting remaining participants after revocation...');
-    //     for (const participant of participants) {
-    //         if (participant.publicKey === counterparties[1]) {
-    //             // Test that revoked participant cannot decrypt
-    //             console.log(`Testing decryption failure for revoked participant: ${participant.publicKey}`);
-    //             try {
-    //                 await expect(
-    //                     curvePoint.decrypt([...newHeader, ...encryptedMessage], protocolID, keyID)
-    //                 ).rejects.toThrow('Your key is not found in the header.');
-    //                 console.log('Revoked participant decryption attempt failed as expected.');
-    //             } catch (error) {
-    //                 console.error('Unexpected success: Revoked participant was able to decrypt the message.');
-    //                 throw error; // Fail the test
-    //             }
-    //             continue;
-    //         }
-    //         try {
-    //             const decryptedMessage = await curvePoint.decrypt(
-    //                 [...newHeader, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(message);
-    //             console.log(`Decryption successful for participant: ${participant.publicKey}`);
-    //         } catch (error) {
-    //             console.error(`Decryption failed for participant: ${participant.publicKey}`);
-    //             console.error(`Error: ${(error as Error).message}`);
-    //             throw error;
-    //         }
-    //     }
-    // });
+//     test('Partial Revocation', async () => {
+//     const curvePoint = new CurvePoint(participants[0].wallet);
+//     const counterparties = participants.map((p) => p.publicKey);
+//     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'revocationProtocol'];
+//     const keyID = 'revocationKey';
+
+//     // Step 1: Encrypt the message with all participants
+//     const { encryptedMessage, header } = await curvePoint.encrypt(
+//         message,
+//         protocolID,
+//         keyID,
+//         counterparties
+//     );
+
+//     console.log('Original Header:', header);
+
+//     // Step 2: Verify all participants can decrypt the message
+//     console.log('Verifying decryption for all participants...');
+//     for (const participant of participants) {
+//         const decryptedMessage = await curvePoint.decrypt(
+//             [...header, ...encryptedMessage],
+//             protocolID,
+//             keyID,
+//             participant.publicKey
+//         );
+//         expect(decryptedMessage).toEqual(message);
+//         console.log(`Decryption successful for participant: ${participant.publicKey}`);
+//     }
+
+//     // Step 3: Revoke access for Participant 1
+//     console.log(`Revoking access for participant[1]: ${counterparties[1]}`);
+//     const newHeader = await curvePoint.removeParticipant(header, counterparties[1]);
+
+//     console.log('Updated Header:', newHeader);
+
+//     // Step 4: Verify only remaining participants can still decrypt the message
+//     console.log('Decrypting remaining participants after revocation...');
+//     for (const participant of participants) {
+//         if (participant.publicKey === counterparties[1]) {
+//             console.log(`Testing decryption failure for revoked participant: ${participant.publicKey}`);
+//             await expect(
+//                 curvePoint.decrypt([...newHeader, ...encryptedMessage], protocolID, keyID, participant.publicKey)
+//             ).rejects.toThrow('Your key is not found in the header.');
+//             console.log('Revoked participant decryption attempt failed as expected.');
+//         } else {
+//             const decryptedMessage = await curvePoint.decrypt(
+//                 [...newHeader, ...encryptedMessage],
+//                 protocolID,
+//                 keyID,
+//                 participant.publicKey
+//             );
+//             expect(decryptedMessage).toEqual(message);
+//             console.log(`Decryption successful for participant: ${participant.publicKey}`);
+//         }
+//     }
+// });
+
     
     
     

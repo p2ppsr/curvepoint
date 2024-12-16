@@ -44,12 +44,12 @@ export class CurvePoint {
             throw new Error(`Encryption failed: ${(error as Error).message}`);
         }
     }
+    
 
     async decrypt(
         ciphertext: number[],
         protocolID: WalletProtocol,
-        keyID: string,
-        participantPublicKey: string
+        keyID: string
     ): Promise<number[]> {
         try {
             // Step 1: Parse the header and message
@@ -57,9 +57,9 @@ export class CurvePoint {
     
             // Step 2: Retrieve the participant's public key
             const { publicKey } = await this.wallet.getPublicKey({ identityKey: true });
-            console.log('Participant public key:', participantPublicKey);
+            console.log('Participant public key attempting to decrypt:', publicKey);
     
-            // Step 3: Iterate through the header to find the participant
+            // Step 3: Iterate through the header to find the participant's entry
             const reader = new Utils.Reader(header);
             let symmetricKey: SymmetricKey | null = null;
             let publicKeyFound = false;
@@ -70,18 +70,17 @@ export class CurvePoint {
                 const counterpartyBytes = reader.read(counterpartyLength);
                 const counterparty = Buffer.from(counterpartyBytes).toString('hex');
     
+                console.log(`Processing counterparty: ${counterparty}`);
+    
                 // Read the encrypted symmetric key
                 const keyLength = reader.readVarIntNum();
                 const encryptedKey = reader.read(keyLength);
     
-                console.log(`Found counterparty: ${counterparty}`);
-    
-                if (counterparty === participantPublicKey) {
-                    publicKeyFound = true;
-                }
+                // Check if the participant's public key matches the counterparty's public key
                 if (counterparty === publicKey) {
-                    console.log(`Match found for public key: ${publicKey}`);
                     publicKeyFound = true;
+                    console.log(`Match found for participantPublicKey: ${publicKey}`);
+    
                     try {
                         // Step 4: Decrypt the symmetric key
                         const decryptedResults = await this.wallet.decrypt({
@@ -90,42 +89,43 @@ export class CurvePoint {
                             ciphertext: encryptedKey,
                         });
     
-                        // Step 5: Create the SymmetricKey
+                        // Step 5: Create the SymmetricKey for message decryption
                         symmetricKey = new SymmetricKey(decryptedResults.plaintext);
                         console.log('Symmetric key successfully derived.');
-                        break;
                     } catch (error) {
                         console.error('Failed to decrypt the symmetric key:', error);
                         throw new Error('Failed to decrypt the symmetric key.');
                     }
+    
+                    break; // Exit the loop after successfully deriving the key
                 }
             }
     
-            // Step 6: Handle case where no matching public key was found
+            // Step 6: Handle case where the participant's public key was not found in the header
             if (!publicKeyFound) {
                 console.error('No matching public key found in the header.');
                 throw new Error('Your key is not found in the header.');
             }
-            else 
-            {
-                console.log('Public key found in the header.');
-            }
     
+            // Step 7: Handle case where no symmetric key was derived
             if (!symmetricKey) {
-                console.error('Symmetric key not found in the header.');
+                console.error('Failed to derive a symmetric key from the header.');
                 throw new Error('Symmetric key not found in the header.');
             }
-            else {
-                // Step 7: Decrypt the message
-                const decryptedMessage = symmetricKey.decrypt(message) as number[];
-                console.log('Message successfully decrypted.');
-                return decryptedMessage;
-            }
+    
+            // Step 8: Decrypt the message
+            const decryptedMessage = symmetricKey.decrypt(message) as number[];
+            console.log('Message successfully decrypted.');
+            return decryptedMessage;
         } catch (error) {
             console.error(`Decryption failed: ${(error as Error).message}`);
             throw new Error(`Decryption failed: ${(error as Error).message}`);
         }
     }
+    
+  
+    
+    
     
     
     
@@ -159,43 +159,47 @@ export class CurvePoint {
     
             // Parse the header length
             const headerLength = reader.readVarIntNum();
-
     
             // Parse the header
             const header = reader.read(headerLength);
-
     
-            // Parse the message
-            const message = reader.bin.slice(reader.pos);
-
+            // Handle cases where no message exists
+            const remainingBytes = reader.bin.slice(reader.pos);
+            const message = remainingBytes.length > 0 ? remainingBytes : [];
     
-            // Validate the parsed header
-            if (header.length !== headerLength) {
-                console.error('Header length mismatch. Expected:', headerLength, 'Got:', header.length);
-                throw new Error('Failed to parse header or message.');
+            // Validate the header structure
+            const tempReader = new Utils.Reader(header);
+            while (!tempReader.eof()) {
+                const counterpartyLength = tempReader.readVarIntNum();
+                if (counterpartyLength <= 0 || counterpartyLength > 1000) {
+                    throw new Error('Malformed header: Invalid counterparty length.');
+                }
+    
+                const counterpartyBytes = tempReader.read(counterpartyLength);
+                if (!counterpartyBytes || counterpartyBytes.length !== counterpartyLength) {
+                    throw new Error('Malformed header: Counterparty bytes do not match length.');
+                }
+    
+                const keyLength = tempReader.readVarIntNum();
+                if (keyLength <= 0 || keyLength > 1000) {
+                    throw new Error('Malformed header: Invalid key length.');
+                }
+    
+                const encryptedKey = tempReader.read(keyLength);
+                if (!encryptedKey || encryptedKey.length !== keyLength) {
+                    throw new Error('Malformed header: Encrypted key bytes do not match length.');
+                }
             }
-    
-            // // Decode the header for detailed debugging
-            // console.log('Decoding header for validation...');
-            // const tempReader = new Utils.Reader(header);
-            // while (!tempReader.eof()) {
-            //     const counterpartyLength = tempReader.readVarIntNum();
-            //     const counterpartyBytes = tempReader.read(counterpartyLength);
-            //     const counterparty = Buffer.from(counterpartyBytes).toString('hex');
-    
-            //     const keyLength = tempReader.readVarIntNum();
-            //     const encryptedKey = tempReader.read(keyLength);
-    
-            //     console.log(`Decoded counterparty: ${counterparty}`);
-            //     console.log(`Decoded encrypted key:`, encryptedKey);
-            // }
     
             return { header, message };
         } catch (error) {
-            console.error('Error parsing header:', error);
-            throw error;
+            console.error(`Error Parsing Header: ${(error as Error).message}`);
+            throw new Error('Failed to parse header or message.');
         }
     }
+    
+    
+    
     
 
     async addParticipant(
@@ -244,56 +248,65 @@ export class CurvePoint {
     }
 
     async removeParticipant(header: number[], targetParticipant: string): Promise<number[]> {
-
+        try {
+            console.log('Header before parsing:', header);
     
-        // Parse the header into counterparties and encrypted keys using parseHeader
-        const { header: parsedHeader } = this.parseHeader(header);
-
+            // Parse the header
+            const { header: parsedHeader } = this.parseHeader(header);
     
-        const reader = new Utils.Reader(parsedHeader);
-        const counterparties: string[] = [];
-        const encryptedKeys: number[][] = [];
+            const reader = new Utils.Reader(parsedHeader);
+            const counterparties: string[] = [];
+            const encryptedKeys: number[][] = [];
     
-
-        while (!reader.eof()) {
-            const counterpartyLength = reader.readVarIntNum();
-            const counterpartyBytes = reader.read(counterpartyLength);
-            const counterparty = Buffer.from(counterpartyBytes).toString('hex');
-
+            // Parse the header to extract counterparties and keys
+            while (!reader.eof()) {
+                const counterpartyLength = reader.readVarIntNum();
+                const counterpartyBytes = reader.read(counterpartyLength);
+                const counterparty = Buffer.from(counterpartyBytes).toString('hex');
     
-            const keyLength = reader.readVarIntNum();
-            const encryptedKey = reader.read(keyLength);
-
+                const keyLength = reader.readVarIntNum();
+                const encryptedKey = reader.read(keyLength);
     
-            // Exclude the target participant
-            if (counterparty !== targetParticipant) {
-                console.log(`Keeping participant ${counterparty}`);
-                counterparties.push(counterparty);
-                encryptedKeys.push(encryptedKey);
-            } else {
-                console.log(`Excluding participant ${counterparty}`);
+                if (counterparty !== targetParticipant) {
+                    // Keep only counterparties not being revoked
+                    console.log(`Keeping participant ${counterparty}`);
+                    counterparties.push(counterparty);
+                    encryptedKeys.push(encryptedKey);
+                } else {
+                    console.log(`Excluding participant ${counterparty}`);
+                    console.log(`Encrypted key for revoked participant: ${encryptedKey}`);
+                }
             }
+    
+            console.log('Final list of counterparties after parsing:', counterparties);
+            console.log('Final list of encrypted keys after parsing:', encryptedKeys);
+    
+            // Validate removal
+            if (counterparties.includes(targetParticipant)) {
+                throw new Error('Failed to remove participant from the header.');
+            }
+            
+    
+            // Log removed counterparties and keys for debugging
+            console.log(`Counterparties after removal: ${JSON.stringify(counterparties)}`);
+            console.log(`Encrypted keys after removal: ${JSON.stringify(encryptedKeys)}`);
+    
+            // Rebuild the header
+            const updatedHeader = this.buildHeader(counterparties, encryptedKeys);
+    
+            console.log('Updated Header:', updatedHeader);
+    
+            // Return the updated header
+            return updatedHeader;
+        } catch (error) {
+            console.error(`Error removing participant: ${(error instanceof Error) ? error.message : error}`);
+            throw new Error('Failed to remove participant.');
         }
-    
-        console.log('Final list of counterparties after parsing:', counterparties);
-    
-        // Validate removal
-        if (counterparties.includes(targetParticipant)) {
-            throw new Error('Failed to remove participant from the header.');
-        }
-    
-        // Rebuild and return the updated header
-        const updatedHeader = this.buildHeader(counterparties, encryptedKeys);
-
-
-
-        // Compare the updated header with the original header
-        if (JSON.stringify(updatedHeader) === JSON.stringify(header)) {
-            throw new Error('Updated header is identical to the original header. Removal failed.');
-        }
-    
-        return updatedHeader;
     }
+    
+    
+    
+    
     
     
     
