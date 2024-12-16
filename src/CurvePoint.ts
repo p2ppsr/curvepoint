@@ -17,33 +17,39 @@ export class CurvePoint {
         counterparties: string[]
     ): Promise<{ encryptedMessage: number[]; header: number[] }> {
         try {
-            // Generate a symmetric key
+            // Step 1: Generate a symmetric key
             const symmetricKey = SymmetricKey.fromRandom();
-
-            // Encrypt the message with the symmetric key
+    
+            // Step 2: Encrypt the message with the symmetric key
             const encryptedMessage = symmetricKey.encrypt(message);
-
-            // Encrypt the symmetric key for each counterparty
+    
+            // Step 3: Encrypt the symmetric key for each counterparty
             const encryptedKeys = await Promise.all(
                 counterparties.map(async (counterparty) => {
+                    // Encrypt the symmetric key for the counterparty
                     const encryptedKey = await this.wallet.encrypt({
                         protocolID,
                         keyID,
                         counterparty,
-                        plaintext: symmetricKey.toArray(),
+                        plaintext: symmetricKey.toArray(), // Send the symmetric key
                     });
-                    return encryptedKey.ciphertext as number[];
+                    console.log(`Encrypted symmetric key for counterparty ${counterparty}:`, encryptedKey.ciphertext);
+                    return encryptedKey.ciphertext as number[]; // Store the ciphertext
                 })
             );
-
-            // Build the header
+    
+            // Step 4: Build the header with counterparties and encrypted keys
             const header = this.buildHeader(counterparties, encryptedKeys);
-
+            console.log('Header constructed with counterparties and encrypted keys:', { counterparties, encryptedKeys });
+    
             return { encryptedMessage: encryptedMessage as number[], header };
         } catch (error) {
+            console.error(`Encryption failed: ${(error as Error).message}`);
             throw new Error(`Encryption failed: ${(error as Error).message}`);
         }
     }
+    
+    
     
 
     async decrypt(
@@ -52,14 +58,14 @@ export class CurvePoint {
         keyID: string
     ): Promise<number[]> {
         try {
-            // Step 1: Parse the header and message
+            // Step 1: Parse the header and message from the ciphertext
             const { header, message } = this.parseHeader(ciphertext);
     
-            // Step 2: Retrieve the participant's public key
+            // Step 2: Retrieve the recipient's public key
             const { publicKey } = await this.wallet.getPublicKey({ identityKey: true });
-            console.log('Participant public key attempting to decrypt:', publicKey);
+            console.log('Recipient public key:', publicKey);
     
-            // Step 3: Iterate through the header to find the participant's entry
+            // Step 3: Find the recipient's encrypted symmetric key in the header
             const reader = new Utils.Reader(header);
             let symmetricKey: SymmetricKey | null = null;
             let publicKeyFound = false;
@@ -76,44 +82,38 @@ export class CurvePoint {
                 const keyLength = reader.readVarIntNum();
                 const encryptedKey = reader.read(keyLength);
     
-                // Check if the participant's public key matches the counterparty's public key
+                // Check if the recipient's public key matches the counterparty
                 if (counterparty === publicKey) {
                     publicKeyFound = true;
-                    console.log(`Match found for participantPublicKey: ${publicKey}`);
+                    console.log(`Match found for public key: ${publicKey}`);
     
-                    try {
-                        // Step 4: Decrypt the symmetric key
-                        const decryptedResults = await this.wallet.decrypt({
-                            protocolID,
-                            keyID,
-                            ciphertext: encryptedKey,
-                        });
+                    // Decrypt the symmetric key using the recipient's wallet
+                    const decryptedResults = await this.wallet.decrypt({
+                        protocolID,
+                        keyID,
+                        ciphertext: encryptedKey,
+                    });
+                    console.log('Symmetric key decrypted:', decryptedResults.plaintext);
     
-                        // Step 5: Create the SymmetricKey for message decryption
-                        symmetricKey = new SymmetricKey(decryptedResults.plaintext);
-                        console.log('Symmetric key successfully derived.');
-                    } catch (error) {
-                        console.error('Failed to decrypt the symmetric key:', error);
-                        throw new Error('Failed to decrypt the symmetric key.');
-                    }
-    
-                    break; // Exit the loop after successfully deriving the key
+                    // Create the symmetric key for decryption
+                    symmetricKey = new SymmetricKey(decryptedResults.plaintext);
+                    console.log('Symmetric key successfully derived.');
+                    break; // Stop processing once the symmetric key is derived
                 }
             }
     
-            // Step 6: Handle case where the participant's public key was not found in the header
+            // Step 4: Handle cases where the recipient's key is not found or decryption fails
             if (!publicKeyFound) {
-                console.error('No matching public key found in the header.');
+                console.error('Recipient public key not found in the header.');
                 throw new Error('Your key is not found in the header.');
             }
     
-            // Step 7: Handle case where no symmetric key was derived
             if (!symmetricKey) {
                 console.error('Failed to derive a symmetric key from the header.');
                 throw new Error('Symmetric key not found in the header.');
             }
     
-            // Step 8: Decrypt the message
+            // Step 5: Decrypt the message using the derived symmetric key
             const decryptedMessage = symmetricKey.decrypt(message) as number[];
             console.log('Message successfully decrypted.');
             return decryptedMessage;
@@ -122,6 +122,7 @@ export class CurvePoint {
             throw new Error(`Decryption failed: ${(error as Error).message}`);
         }
     }
+    
     
   
     
