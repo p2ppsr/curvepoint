@@ -33,6 +33,7 @@ describe('CurvePoint Library', () => {
         const counterparties = participants.map((p) => p.publicKey);
         const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'exampleProtocol'];
         const keyID = 'exampleKey';
+        const message = [1, 2, 3, 4, 5]; // Test message as an array of numbers
     
         // Step 2: Encrypt the message
         const { encryptedMessage, header } = await curvePointSender.encrypt(
@@ -42,31 +43,33 @@ describe('CurvePoint Library', () => {
             counterparties
         );
     
-        console.log('Header:', header);
+        console.log('Constructed Header:', header);
         console.log('Encrypted Message:', encryptedMessage);
     
         // Step 3: Test decryption for each participant
-        for (const participant of participants) {
-            // Each participant uses their own instance of CurvePoint with their wallet
+        for (const [index, participant] of participants.entries()) {
+            console.log(`Testing decryption for Participant ${index}: ${participant.publicKey}`);
             const curvePointParticipant = new CurvePoint(participant.wallet);
     
             try {
+                // Participant attempts to decrypt the message
                 const decryptedMessage = await curvePointParticipant.decrypt(
                     [...header, ...encryptedMessage],
                     protocolID,
                     keyID
                 );
     
-                // Validate that the decrypted message matches the original
+                // Validate that the decrypted message matches the original message
                 expect(decryptedMessage).toEqual(message);
-                console.log(`Decryption successful for participant: ${participant.publicKey}`);
+                console.log(`Decryption successful for Participant ${index}: ${participant.publicKey}`);
             } catch (error) {
-                console.error(`Decryption failed for participant: ${participant.publicKey}`);
+                console.error(`Decryption failed for Participant ${index}: ${participant.publicKey}`);
                 console.error(`Error: ${(error as Error).message}`);
                 throw error;
             }
         }
     });
+    
     
     
     // test('Fail to decrypt with incorrect key', async () => {
