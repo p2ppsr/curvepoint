@@ -370,88 +370,104 @@ export class CurvePoint {
     
 
     async addParticipant(
-        header: number[],
-        newParticipant: string,
+        iheader: number[],
         protocolID: WalletProtocol,
-        keyID: string
+        keyID: string,
+        newParticipant: string
     ): Promise<number[]> {
         try {
-            // Step 1: Parse the existing header
-            const { header: existingHeader } = this.parseHeader(header);
-            const reader = new Utils.Reader(existingHeader);
+            console.log('Header before parsing:', iheader);
     
-            const entries: {
-                recipientPublicKey: string;
-                senderPublicKey: string;
-                encryptedKey: number[];
-            }[] = [];
+            // Step 1: Parse the header
+            const { header, message } = this.parseHeader(iheader);
+            const reader = new Utils.Reader(header);
     
-            // Parse existing header entries
-            while (!reader.eof()) {
-                const recipientPublicKeyBytes = reader.read(33);
-                const recipientPublicKey = Buffer.from(recipientPublicKeyBytes).toString('hex');
+            // Step 2: Read and validate the version
+            const version = reader.readUInt32LE();
+            console.log('Header Version:', version);
+            if (version < 1) throw new Error(`Unsupported header version: ${version}`);
     
-                const senderPublicKeyBytes = reader.read(33);
-                const senderPublicKey = Buffer.from(senderPublicKeyBytes).toString('hex');
+            // Step 3: Read the number of recipients
+            const numRecipients = reader.readVarIntNum();
+            console.log('Number of Recipients:', numRecipients);
+            if (numRecipients <= 0) throw new Error('No recipients found in the header.');
     
-                const encryptedKeyLength = reader.readVarIntNum();
-                const encryptedKey = reader.read(encryptedKeyLength);
+            const recipients: string[] = [];
+            const encryptedKeys: { ciphertext: number[] }[] = [];
+            let senderPublicKey: string | null = null;
+            let symmetricKey: SymmetricKey | null = null;
     
-                entries.push({
-                    recipientPublicKey,
-                    senderPublicKey,
-                    encryptedKey,
-                });
+            // Step 4: Parse recipient entries
+            for (let i = 0; i < numRecipients; i++) {
+                try {
+                    // Read recipient public key
+                    const recipientPublicKeyBytes = reader.read(33);
+                    if (recipientPublicKeyBytes.length !== 33) {
+                        console.warn(`Skipping malformed entry at index ${i}: Invalid recipient key length`);
+                        continue;
+                    }
+                    const recipientPublicKey = Buffer.from(recipientPublicKeyBytes).toString('hex');
+    
+                    // Read sender public key
+                    const senderPublicKeyBytes = reader.read(33);
+                    if (senderPublicKeyBytes.length !== 33) {
+                        console.warn(`Skipping malformed entry at index ${i}: Invalid sender key length`);
+                        continue;
+                    }
+                    senderPublicKey = Buffer.from(senderPublicKeyBytes).toString('hex');
+    
+                    // Read and validate encrypted key
+                    const encryptedKeyLength = reader.readVarIntNum();
+                    const encryptedKey = reader.read(encryptedKeyLength);
+                    if (encryptedKey.length !== encryptedKeyLength) {
+                        console.warn(`Skipping malformed entry at index ${i}: Invalid encrypted key length`);
+                        continue;
+                    }
+    
+                    // Add to recipients and keys
+                    recipients.push(recipientPublicKey);
+                    encryptedKeys.push({ ciphertext: encryptedKey });
+    
+                    // Extract symmetric key for the first valid recipient
+                    if (!symmetricKey) {
+                        const decryptedResults = await this.wallet.decrypt({
+                            protocolID,
+                            keyID,
+                            counterparty: senderPublicKey,
+                            ciphertext: encryptedKey,
+                        });
+                        symmetricKey = new SymmetricKey(decryptedResults.plaintext);
+                        console.log('Symmetric Key extracted:', symmetricKey);
+                    }
+                } catch (err) {
+                    console.warn(`Error parsing recipient entry at index ${i}:`, err);
+                    continue;
+                }
             }
     
-            // Step 2: Check if the new participant already exists
-            if (entries.some(entry => entry.recipientPublicKey === newParticipant)) {
-                throw new Error('Participant already exists in the header.');
+            if (!senderPublicKey) throw new Error('Sender public key not found in the header.');
+    
+            // Step 5: Ensure the new participant isn't already in the header
+            if (recipients.includes(newParticipant)) {
+                throw new Error(`Participant ${newParticipant} already exists in the header.`);
             }
     
-            // Step 3: Retrieve the sender's public key
-            const { publicKey: senderPublicKey } = await this.wallet.getPublicKey({
-                identityKey: true,
-            });
-            console.log(`Sender's Public Key: ${senderPublicKey}`);
-    
-            // Step 4: Decrypt the symmetric key
-            const symmetricKey = await this.extractSymmetricKey(existingHeader, protocolID, keyID);
-    
-            // Step 5: Encrypt the symmetric key for the new participant
-            const encryptedKeyResult = await this.wallet.encrypt({
+            // Step 6: Encrypt the symmetric key for the new participant
+            if (!symmetricKey) throw new Error('Symmetric key not found in the header.');
+            const newEncryptedKey = await this.wallet.encrypt({
                 protocolID,
                 keyID,
                 counterparty: newParticipant,
                 plaintext: symmetricKey.toArray(),
             });
-            const newEncryptedKey = encryptedKeyResult.ciphertext as number[];
+            console.log('New Encrypted Key for participant:', newParticipant, newEncryptedKey);
     
-            // Step 6: Add the new participant entry
-            entries.push({
-                recipientPublicKey: newParticipant,
-                senderPublicKey,
-                encryptedKey: newEncryptedKey,
-            });
-    
-            // Step 7: Rebuild the header
-            const writer = new Utils.Writer();
-    
-            writer.writeUInt32LE(0x00000001); // Write version
-            writer.writeVarIntNum(entries.length); // Write number of recipients
-    
-            for (const entry of entries) {
-                const recipientKeyBytes = Array.from(Buffer.from(entry.recipientPublicKey, 'hex'));
-                const senderKeyBytes = Array.from(Buffer.from(entry.senderPublicKey, 'hex'));
-    
-                writer.write(recipientKeyBytes); // Write recipient's public key
-                writer.write(senderKeyBytes); // Write sender's public key
-                writer.writeVarIntNum(entry.encryptedKey.length); // Write encrypted key length
-                writer.write(entry.encryptedKey); // Write encrypted symmetric key
-            }
-    
-            const updatedHeader = writer.toArray();
-            console.log('Updated Header:', updatedHeader);
+            recipients.push(newParticipant);
+            encryptedKeys.push({ ciphertext: newEncryptedKey.ciphertext as number[] });
+
+            // Step 8: Reconstruct the updated header
+            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys);
+            console.log('Updated Header after adding participant:', updatedHeader);
     
             return updatedHeader;
         } catch (error) {
@@ -459,6 +475,8 @@ export class CurvePoint {
             throw new Error('Failed to add new participant to the header.');
         }
     }
+    
+    
     
 
     async removeParticipant(iheader: number[], targetParticipant: string): Promise<number[]> {

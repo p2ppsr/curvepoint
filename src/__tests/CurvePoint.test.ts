@@ -459,17 +459,18 @@ describe('CurvePoint Library', () => {
         // Step 2: Grant access to participants[2]
         const newHeader = await curvePoint.addParticipant(
             header,
-            participants[2].publicKey,
             protocolID,
-            keyID
+            keyID,
+            participants[2].publicKey
         );
     
         console.log('Updated header after granting access:', newHeader);
     
         // Step 3: Verify that participants[0], participants[1], and participants[2] can decrypt
+        const accessList = [...subset, participants[2].publicKey];
         for (const participant of participants) {
-            if (!subset.includes(participant.publicKey) && participant !== participants[2]) {
-                continue; // Skip participants not in the subset or the new participant
+            if (!accessList.includes(participant.publicKey)) {
+                continue; // Skip participants without access
             }
     
             const participantCurvePoint = new CurvePoint(participant.wallet);
@@ -482,17 +483,17 @@ describe('CurvePoint Library', () => {
         }
     
         // Step 4: Ensure other participants cannot decrypt the updated message
-        for (const participant of participants) {
-            if (subset.includes(participant.publicKey) || participant === participants[2]) {
-                continue; // Skip participants with access
-            }
-    
+        const unauthorizedParticipants = participants.filter(
+            (participant) => !accessList.includes(participant.publicKey)
+        );
+        for (const participant of unauthorizedParticipants) {
             const participantCurvePoint = new CurvePoint(participant.wallet);
             await expect(
                 participantCurvePoint.decrypt([...newHeader, ...encryptedMessage], protocolID, keyID)
             ).rejects.toThrow('Your key is not found in the header.');
         }
     });
+    
     
 
     // test('Message-Specific Key Derivation: Unique key derivation per message', async () => {
