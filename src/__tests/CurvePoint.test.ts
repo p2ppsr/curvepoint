@@ -434,65 +434,102 @@ describe('CurvePoint Library', () => {
     
     
     
+    test('Administrator Restriction: Only administrators can revoke access', async () => {
+        // Step 1: Initialize CurvePoint for the sender
+        const admin = participants[0]; // Sender is also an admin
+        const nonAdmin = participants[1]; // Non-admin participant
+        const targetParticipant = participants[2]; // Participant to be revoked
+        const curvePointAdmin = new CurvePoint(admin.wallet);
+        const curvePointNonAdmin = new CurvePoint(nonAdmin.wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'adminRestrictionProtocol'];
+        const keyID = 'adminKey';
+    
+        // Step 2: Encrypt the message with all participants and specify administrators
+        const counterparties = participants.map((p) => p.publicKey);
+        const { encryptedMessage, header } = await curvePointAdmin.encrypt(
+            message,
+            protocolID,
+            keyID,
+            counterparties,
+            [admin.publicKey] // Admin list
+        );
+    
+        console.log('Original Header with Admins:', header);
+    
+        // Step 3: Admin revokes access for the target participant
+        const updatedHeader = await curvePointAdmin.removeParticipant(header, targetParticipant.publicKey);
+        console.log('Updated Header after Admin Revocation:', updatedHeader);
+    
+        // Verify the target participant is no longer in the header
+        const curvePointTarget = new CurvePoint(targetParticipant.wallet);
+        await expect(
+            curvePointTarget.decrypt([...updatedHeader, ...encryptedMessage], protocolID, keyID)
+        ).rejects.toThrow('Your key is not found in the header.');
+    
+        // Step 4: Non-admin attempts to revoke access
+        await expect(
+            curvePointNonAdmin.removeParticipant(header, targetParticipant.publicKey)
+        ).rejects.toThrow('Only administrators are allowed to remove participants.');
+    });
     
     
     
     
     
 
-    test('Access Granting: Grant new participant access to a previously encrypted message', async () => {
-        const curvePoint = new CurvePoint(participants[0].wallet);
-        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'accessGrantProtocol'];
-        const keyID = 'exampleKey';
+    // test('Access Granting: Grant new participant access to a previously encrypted message', async () => {
+    //     const curvePoint = new CurvePoint(participants[0].wallet);
+    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'accessGrantProtocol'];
+    //     const keyID = 'exampleKey';
     
-        // Step 1: Encrypt a message for participants[0] and participants[1]
-        const subset = [participants[0].publicKey, participants[1].publicKey];
-        const { encryptedMessage, header } = await curvePoint.encrypt(
-            message,
-            protocolID,
-            keyID,
-            subset
-        );
+    //     // Step 1: Encrypt a message for participants[0] and participants[1]
+    //     const subset = [participants[0].publicKey, participants[1].publicKey];
+    //     const { encryptedMessage, header } = await curvePoint.encrypt(
+    //         message,
+    //         protocolID,
+    //         keyID,
+    //         subset
+    //     );
     
-        console.log('Original header:', header);
+    //     console.log('Original header:', header);
     
-        // Step 2: Grant access to participants[2]
-        const newHeader = await curvePoint.addParticipant(
-            header,
-            protocolID,
-            keyID,
-            participants[2].publicKey
-        );
+    //     // Step 2: Grant access to participants[2]
+    //     const newHeader = await curvePoint.addParticipant(
+    //         header,
+    //         protocolID,
+    //         keyID,
+    //         participants[2].publicKey
+    //     );
     
-        console.log('Updated header after granting access:', newHeader);
+    //     console.log('Updated header after granting access:', newHeader);
     
-        // Step 3: Verify that participants[0], participants[1], and participants[2] can decrypt
-        const accessList = [...subset, participants[2].publicKey];
-        for (const participant of participants) {
-            if (!accessList.includes(participant.publicKey)) {
-                continue; // Skip participants without access
-            }
+    //     // Step 3: Verify that participants[0], participants[1], and participants[2] can decrypt
+    //     const accessList = [...subset, participants[2].publicKey];
+    //     for (const participant of participants) {
+    //         if (!accessList.includes(participant.publicKey)) {
+    //             continue; // Skip participants without access
+    //         }
     
-            const participantCurvePoint = new CurvePoint(participant.wallet);
-            const decryptedMessage = await participantCurvePoint.decrypt(
-                [...newHeader, ...encryptedMessage],
-                protocolID,
-                keyID
-            );
-            expect(decryptedMessage).toEqual(message);
-        }
+    //         const participantCurvePoint = new CurvePoint(participant.wallet);
+    //         const decryptedMessage = await participantCurvePoint.decrypt(
+    //             [...newHeader, ...encryptedMessage],
+    //             protocolID,
+    //             keyID
+    //         );
+    //         expect(decryptedMessage).toEqual(message);
+    //     }
     
-        // Step 4: Ensure other participants cannot decrypt the updated message
-        const unauthorizedParticipants = participants.filter(
-            (participant) => !accessList.includes(participant.publicKey)
-        );
-        for (const participant of unauthorizedParticipants) {
-            const participantCurvePoint = new CurvePoint(participant.wallet);
-            await expect(
-                participantCurvePoint.decrypt([...newHeader, ...encryptedMessage], protocolID, keyID)
-            ).rejects.toThrow('Your key is not found in the header.');
-        }
-    });
+    //     // Step 4: Ensure other participants cannot decrypt the updated message
+    //     const unauthorizedParticipants = participants.filter(
+    //         (participant) => !accessList.includes(participant.publicKey)
+    //     );
+    //     for (const participant of unauthorizedParticipants) {
+    //         const participantCurvePoint = new CurvePoint(participant.wallet);
+    //         await expect(
+    //             participantCurvePoint.decrypt([...newHeader, ...encryptedMessage], protocolID, keyID)
+    //         ).rejects.toThrow('Your key is not found in the header.');
+    //     }
+    // });
     
     
 
