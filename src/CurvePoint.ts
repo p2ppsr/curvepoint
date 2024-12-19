@@ -57,8 +57,10 @@ export class CurvePoint {
                 })
             );
     
+            const version = 0x00000000;
+
             // Step 6: Build the header
-            const header = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators);
+            const header = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators, version);
     
             return { encryptedMessage: encryptedMessage as number[], header };
         } catch (error) {
@@ -66,12 +68,6 @@ export class CurvePoint {
             throw new Error(`Encryption failed: ${(error as Error).message}`);
         }
     }
-    
-    
-    
-    
-    
-    
 
     async decrypt(
         ciphertext: number[],
@@ -86,14 +82,12 @@ export class CurvePoint {
             const { publicKey: recipientPublicKey } = await this.wallet.getPublicKey({
                 identityKey: true,
             });
-            //console.log('Recipient public key:', recipientPublicKey);
     
             // Step 3: Parse the header
             const reader = new Utils.Reader(header);
     
             // Read version
             const version = reader.readUInt32LE();
-            //console.log('Header Version:', version);
     
             if (version !== 0x00000001) {
                 throw new Error('Unsupported header version.');
@@ -101,7 +95,6 @@ export class CurvePoint {
     
             // Read number of recipients
             const numRecipients = reader.readVarIntNum();
-            //console.log('Number of Recipients:', numRecipients);
     
             let symmetricKey: SymmetricKey | null = null;
     
@@ -124,7 +117,6 @@ export class CurvePoint {
     
                     // Check if this recipient key matches the recipient's public key
                     if (recipientKey === recipientPublicKey) {
-                        //console.log('Match found for recipient public key:', recipientPublicKey);
     
                         // Step 5: Decrypt the symmetric key using the sender's public key as counterparty
                         try {
@@ -134,11 +126,9 @@ export class CurvePoint {
                                 counterparty: senderKey, // Sender's public key from header
                                 ciphertext: encryptedKey,
                             });
-                            //console.log('Symmetric key decrypted successfully:', decryptedResults.plaintext);
     
                             // Step 6: Derive the symmetric key
                             symmetricKey = new SymmetricKey(decryptedResults.plaintext);
-                            //console.log('Symmetric key successfully derived:', decryptedResults.plaintext);
                             break; // Exit the loop as the symmetric key is successfully derived
                         } catch (error) {
                             console.error(`Decryption failed!`);
@@ -159,31 +149,19 @@ export class CurvePoint {
     
             // Step 8: Decrypt the message with the symmetric key
             const decryptedMessage = symmetricKey.decrypt(message) as number[];
-            //console.log('Message successfully decrypted.');
             return decryptedMessage;
         } catch (error) {
             console.error(`Decryption failed: ${(error as Error).message}`);
             throw new Error(`Decryption failed: ${(error as Error).message}`);
         }
     }
-    
-    
-    
-    
-    
-  
-    
-    
-    
-    
-    
-    
 
     buildHeader(
         senderPublicKey: string,
         recipients: string[],
         encryptedKeys: { ciphertext: number[] }[],
-        administrators: string[]
+        administrators: string[],
+        currentVersion: number
     ): number[] {
         const writer = new Utils.Writer();
     
@@ -192,18 +170,14 @@ export class CurvePoint {
             return key.length === 66 && /^[0-9a-fA-F]+$/.test(key); // 66 hex chars = 33 bytes
         };
     
-        console.log('--- Start Building Header ---');
-        console.log('Sender Public Key:', senderPublicKey);
-    
         // Step 1: Validate the sender's public key
         if (!validatePublicKey(senderPublicKey)) {
             throw new Error(`Invalid sender public key: ${senderPublicKey}`);
         }
     
-        // Step 2: Write version (4 bytes)
-        const version = 0x00000001;
-        writer.writeUInt32LE(version);
-        console.log('Header Version:', version);
+        // Step 2: Increment the version and write it (4 bytes)
+        const newVersion = currentVersion + 1; // Increment the passed-in version
+        writer.writeUInt32LE(newVersion); // Write the incremented version
     
         // Step 3: Validate recipients and encrypted keys
         const cleanedRecipients: string[] = [];
@@ -231,7 +205,6 @@ export class CurvePoint {
     
         // Step 4: Write the number of valid recipients
         writer.writeVarIntNum(cleanedRecipients.length);
-        console.log('Number of Recipients:', cleanedRecipients.length);
     
         // Step 5: Write each recipient's entry
         cleanedRecipients.forEach((recipient, i) => {
@@ -250,13 +223,6 @@ export class CurvePoint {
     
             // Write the encrypted symmetric key
             writer.write(encryptedKey);
-    
-            console.log(`Recipient ${i}:`, {
-                recipientPublicKey: recipient,
-                senderPublicKey: senderPublicKey,
-                ciphertextLength: encryptedKey.length,
-                ciphertext: encryptedKey,
-            });
         });
     
         // Step 6: Add the administrators section
@@ -273,19 +239,15 @@ export class CurvePoint {
 
         // Write the number of administrators
         writer.writeVarIntNum(administrators.length);
-        console.log('Number of Administrators:', administrators.length);
 
         // Write each administrator's public key
         administrators.forEach((admin, i) => {
             const adminPublicKey = Array.from(Buffer.from(admin, 'hex'));
             writer.write(adminPublicKey);
-
-            console.log(`Administrator ${i}:`, { publicKey: admin });
         });
 
         // Step 7: Get the full header content
         const headerContent = writer.toArray();
-        console.log('Raw Header Content:', headerContent);
     
         // Step 8: Prepend the length of the header
         const finalWriter = new Utils.Writer();
@@ -293,42 +255,28 @@ export class CurvePoint {
         finalWriter.write(headerContent); // Append the full header content
     
         const fullHeader = finalWriter.toArray();
-        console.log('Final Constructed Header:', fullHeader);
-    
-        console.log('--- End Building Header ---');
     
         return fullHeader;
     }
-    
-    
-    
-    
-    
-    
 
     parseHeader(ciphertext: number[]): { header: number[]; message: number[]; administrators: string[] } {
         try {
             const reader = new Utils.Reader(ciphertext);
-    
-            console.log('--- Start Parsing Header ---');
 
             // Step 1: Read and validate header length
             const headerLength = reader.readVarIntNum();
-            console.log('Parsed Header Length:', headerLength);
-    
+
             if (headerLength > reader.bin.length - reader.pos) {
                 throw new Error('Header length exceeds available data.');
             }
     
             const header = reader.read(headerLength);
-            console.log('Header:', header);
-    
+
             // Step 2: Parse the header content
             const tempReader = new Utils.Reader(header);
     
             // Step 3: Validate version
             const version = tempReader.readUInt32LE();
-            console.log('Header Version:', version);
     
             if (version < 1) {
                 throw new Error(`Unsupported or invalid header version: ${version}`);
@@ -336,8 +284,7 @@ export class CurvePoint {
     
             // Step 4: Validate number of recipients
             const numRecipients = tempReader.readVarIntNum();
-            console.log('Number of Recipients:', numRecipients);
-    
+
             if (numRecipients <= 0) {
                 throw new Error('No recipients found in the header.');
             }
@@ -351,16 +298,14 @@ export class CurvePoint {
                     console.warn(`Skipping malformed recipient at index ${i}: invalid key length.`);
                     continue;
                 }
-                console.log(`Recipient ${i} Public Key:`, Buffer.from(recipientKey).toString('hex'));
-    
+
                 // Read fixed-length sender key (33 bytes)
                 const senderKey = tempReader.read(33);
                 if (senderKey.length !== 33) {
                     console.warn(`Skipping malformed sender at index ${i}: invalid key length.`);
                     continue;
                 }
-                console.log(`Sender ${i} Public Key:`, Buffer.from(senderKey).toString('hex'));
-    
+
                 // Read and validate encrypted key
                 const encryptedKeyLength = tempReader.readVarIntNum();
                 const encryptedKey = tempReader.read(encryptedKeyLength);
@@ -369,8 +314,7 @@ export class CurvePoint {
                     console.warn(`Skipping malformed entry at index ${i}: encrypted key length mismatch.`);
                     continue;
                 }
-                console.log(`Encrypted Key for Recipient ${i}:`, encryptedKey);
-    
+
                 recipients.push({
                     recipientPublicKey: Buffer.from(recipientKey).toString('hex'),
                     senderPublicKey: Buffer.from(senderKey).toString('hex'),
@@ -380,7 +324,6 @@ export class CurvePoint {
     
             // Step 6: Read and validate the administrators section
             const numAdministrators = tempReader.readVarIntNum();
-            console.log('Number of Administrators:', numAdministrators);
 
             if (numAdministrators < 1) {
                 throw new Error('No administrators found in the header.');
@@ -394,16 +337,13 @@ export class CurvePoint {
                     continue;
                 }
                 const adminPublicKey = Buffer.from(adminKey).toString('hex');
-                console.log(`Administrator ${i} Public Key:`, adminPublicKey);
+
                 administrators.push(adminPublicKey);
             }
 
             // Step 7: Extract remaining message
             const remainingBytes = reader.bin.slice(reader.pos);
             const message = remainingBytes.length > 0 ? remainingBytes : [];
-            console.log('Remaining Message Bytes:', message);
-    
-            console.log('--- End Parsing Header ---');
 
             return { header, message, administrators };
         } catch (error) {
@@ -411,13 +351,6 @@ export class CurvePoint {
             throw new Error('Failed to parse header or message.');
         }
     }
-    
-    
-    
-    
-    
-    
-    
 
     async addParticipant(
         iheader: number[],
@@ -426,20 +359,18 @@ export class CurvePoint {
         newParticipant: string
     ): Promise<number[]> {
         try {
-            console.log('Header before parsing:', iheader);
-    
             // Step 1: Parse the header
             const { header, message, administrators } = this.parseHeader(iheader);
             const reader = new Utils.Reader(header);
     
             // Step 2: Read and validate the version
             const version = reader.readUInt32LE();
-            console.log('Header Version:', version);
+
             if (version < 1) throw new Error(`Unsupported header version: ${version}`);
     
             // Step 3: Read the number of recipients
             const numRecipients = reader.readVarIntNum();
-            console.log('Number of Recipients:', numRecipients);
+
             if (numRecipients <= 0) throw new Error('No recipients found in the header.');
     
             const recipients: string[] = [];
@@ -487,7 +418,7 @@ export class CurvePoint {
                             ciphertext: encryptedKey,
                         });
                         symmetricKey = new SymmetricKey(decryptedResults.plaintext);
-                        console.log('Symmetric Key extracted:', symmetricKey);
+
                     }
                 } catch (err) {
                     console.warn(`Error parsing recipient entry at index ${i}:`, err);
@@ -510,44 +441,35 @@ export class CurvePoint {
                 counterparty: newParticipant,
                 plaintext: symmetricKey.toArray(),
             });
-            console.log('New Encrypted Key for participant:', newParticipant, newEncryptedKey);
-    
+
             recipients.push(newParticipant);
             encryptedKeys.push({ ciphertext: newEncryptedKey.ciphertext as number[] });
 
             // Step 7: Reconstruct the updated header
-            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators);
-            console.log('Updated Header after adding participant:', updatedHeader);
-    
+            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators, version);
+
             return updatedHeader;
         } catch (error) {
             console.error(`Error adding participant: ${(error as Error).message}`);
             throw new Error('Failed to add new participant to the header.');
         }
     }
-    
-    
-    
 
     async removeParticipant(iheader: number[], targetParticipant: string): Promise<number[]> {
         try {
-            console.log('Header before parsing:', iheader);
-    
             // Step 1: Parse the header
             const { header, message, administrators } = this.parseHeader(iheader);
             const reader = new Utils.Reader(header);
     
             // Step 2: Read and validate the version
             const version = reader.readUInt32LE();
-            console.log('Header Version:', version);
-    
+
             if (version < 1) {
                 throw new Error(`Unsupported header version: ${version}`);
             }
     
             // Step 3: Check if the current user is an administrator
             const { publicKey: userPublicKey } = await this.wallet.getPublicKey({ identityKey: true });
-            console.log('User Public Key:', userPublicKey);
 
             if (!administrators.includes(userPublicKey)) {
                 throw new Error('Only administrators are allowed to remove participants.');
@@ -555,8 +477,7 @@ export class CurvePoint {
 
             // Step 4: Read the number of recipients
             const numRecipients = reader.readVarIntNum();
-            console.log('Number of Recipients:', numRecipients);
-    
+
             if (numRecipients <= 0) {
                 throw new Error('No recipients found in the header.');
             }
@@ -593,10 +514,7 @@ export class CurvePoint {
                     }
     
                     // Check if this is the participant to exclude
-                    if (recipientPublicKey === targetParticipant) {
-                        console.log(`Excluding participant: ${recipientPublicKey}`);
-                    } else {
-                        console.log(`Keeping participant: ${recipientPublicKey}`);
+                    if (recipientPublicKey !== targetParticipant) {
                         recipients.push(recipientPublicKey);
                         encryptedKeys.push({ ciphertext: encryptedKey });
                     }
@@ -611,19 +529,15 @@ export class CurvePoint {
                 throw new Error('Sender public key not found in the header.');
             }
     
-            console.log('Final list of recipients after parsing:', recipients);
-            console.log('Sender public key:', senderPublicKey);
-            console.log('Encrypted keys:', encryptedKeys);
-    
+
             // Step 5: Ensure the target participant was successfully removed
             if (recipients.includes(targetParticipant)) {
                 throw new Error('Failed to remove participant from the header.');
             }
     
             // Step 6: Reconstruct the updated header
-            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators);
-            console.log('Updated Header after revocation:', updatedHeader);
-    
+            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators, version);
+
             return updatedHeader;
         } catch (error) {
             console.error(
@@ -632,68 +546,5 @@ export class CurvePoint {
             throw new Error('Failed to remove participant.');
         }
     }
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-    
-
-    private async extractSymmetricKey(
-        header: number[],
-        protocolID: WalletProtocol,
-        keyID: string
-    ): Promise<SymmetricKey> {
-        const reader = new Utils.Reader(header);
-    
-        // Retrieve the participant's public key
-        const { publicKey } = await this.wallet.getPublicKey({ identityKey: true });
-        console.log('Participant public key:', publicKey);
-    
-        while (!reader.eof()) {
-            try {
-                // Step 1: Read recipient public key
-                const recipientPublicKeyBytes = reader.read(33); // 33-byte compressed DER format
-                const recipientPublicKey = Buffer.from(recipientPublicKeyBytes).toString('hex');
-    
-                // Step 2: Read sender public key
-                const senderPublicKeyBytes = reader.read(33); // 33-byte compressed DER format
-                const senderPublicKey = Buffer.from(senderPublicKeyBytes).toString('hex');
-    
-                // Step 3: Read the encrypted symmetric key
-                const encryptedKeyLength = reader.readVarIntNum(); // Encrypted key length
-                const encryptedKey = reader.read(encryptedKeyLength);
-    
-                //console.log(`Processing recipient: ${recipientPublicKey}, sender: ${senderPublicKey}`);
-    
-                // Step 4: Check if this entry is for the current participant
-                if (recipientPublicKey === publicKey) {
-                    //console.log(`Match found for recipientPublicKey: ${recipientPublicKey}`);
-                    //console.log('Attempting to decrypt symmetric key...');
-    
-                    // Decrypt the symmetric key using the recipient's wallet
-                    const decryptedResults = await this.wallet.decrypt({
-                        protocolID,
-                        keyID,
-                        ciphertext: encryptedKey,
-                    });
-    
-                    //console.log('Symmetric key successfully decrypted:', decryptedResults.plaintext);
-                    return new SymmetricKey(decryptedResults.plaintext); // Return the symmetric key
-                }
-            } catch (error) {
-                console.error('Error processing header entry:', error);
-                continue; // Continue to the next entry if there's an issue
-            }
-        }
-    
-        // Throw an error if the recipient's public key is not found
-        throw new Error('Your public key is not found in the header.');
-    }    
     
 }

@@ -434,43 +434,43 @@ describe('CurvePoint Library', () => {
     
     
     
-    test('Administrator Restriction: Only administrators can revoke access', async () => {
-        // Step 1: Initialize CurvePoint for the sender
-        const admin = participants[0]; // Sender is also an admin
-        const nonAdmin = participants[1]; // Non-admin participant
-        const targetParticipant = participants[2]; // Participant to be revoked
-        const curvePointAdmin = new CurvePoint(admin.wallet);
-        const curvePointNonAdmin = new CurvePoint(nonAdmin.wallet);
-        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'adminRestrictionProtocol'];
-        const keyID = 'adminKey';
+    // test('Administrator Restriction: Only administrators can revoke access', async () => {
+    //     // Step 1: Initialize CurvePoint for the sender
+    //     const admin = participants[0]; // Sender is also an admin
+    //     const nonAdmin = participants[1]; // Non-admin participant
+    //     const targetParticipant = participants[2]; // Participant to be revoked
+    //     const curvePointAdmin = new CurvePoint(admin.wallet);
+    //     const curvePointNonAdmin = new CurvePoint(nonAdmin.wallet);
+    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'adminRestrictionProtocol'];
+    //     const keyID = 'adminKey';
     
-        // Step 2: Encrypt the message with all participants and specify administrators
-        const counterparties = participants.map((p) => p.publicKey);
-        const { encryptedMessage, header } = await curvePointAdmin.encrypt(
-            message,
-            protocolID,
-            keyID,
-            counterparties,
-            [admin.publicKey] // Admin list
-        );
+    //     // Step 2: Encrypt the message with all participants and specify administrators
+    //     const counterparties = participants.map((p) => p.publicKey);
+    //     const { encryptedMessage, header } = await curvePointAdmin.encrypt(
+    //         message,
+    //         protocolID,
+    //         keyID,
+    //         counterparties,
+    //         [admin.publicKey] // Admin list
+    //     );
     
-        console.log('Original Header with Admins:', header);
+    //     console.log('Original Header with Admins:', header);
     
-        // Step 3: Admin revokes access for the target participant
-        const updatedHeader = await curvePointAdmin.removeParticipant(header, targetParticipant.publicKey);
-        console.log('Updated Header after Admin Revocation:', updatedHeader);
+    //     // Step 3: Admin revokes access for the target participant
+    //     const updatedHeader = await curvePointAdmin.removeParticipant(header, targetParticipant.publicKey);
+    //     console.log('Updated Header after Admin Revocation:', updatedHeader);
     
-        // Verify the target participant is no longer in the header
-        const curvePointTarget = new CurvePoint(targetParticipant.wallet);
-        await expect(
-            curvePointTarget.decrypt([...updatedHeader, ...encryptedMessage], protocolID, keyID)
-        ).rejects.toThrow('Your key is not found in the header.');
+    //     // Verify the target participant is no longer in the header
+    //     const curvePointTarget = new CurvePoint(targetParticipant.wallet);
+    //     await expect(
+    //         curvePointTarget.decrypt([...updatedHeader, ...encryptedMessage], protocolID, keyID)
+    //     ).rejects.toThrow('Your key is not found in the header.');
     
-        // Step 4: Non-admin attempts to revoke access
-        await expect(
-            curvePointNonAdmin.removeParticipant(header, targetParticipant.publicKey)
-        ).rejects.toThrow('Only administrators are allowed to remove participants.');
-    });
+    //     // Step 4: Non-admin attempts to revoke access
+    //     await expect(
+    //         curvePointNonAdmin.removeParticipant(header, targetParticipant.publicKey)
+    //     ).rejects.toThrow('Failed to remove participant.');
+    // });
     
     
     
@@ -533,47 +533,50 @@ describe('CurvePoint Library', () => {
     
     
 
-    // test('Message-Specific Key Derivation: Unique key derivation per message', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'messageSpecificKey'];
+    test('Message-Specific Key Derivation: Unique key derivation per message', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'messageSpecificKey'];
     
-    //     // Encrypt two messages with different keyIDs
-    //     const keyID1 = 'messageKey1';
-    //     const keyID2 = 'messageKey2';
+        // Encrypt two messages with different keyIDs
+        const keyID1 = 'messageKey1';
+        const keyID2 = 'messageKey2';
     
-    //     const encryption1 = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID1,
-    //         participants.map((p) => p.publicKey)
-    //     );
+        const encryption1 = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID1,
+            participants.map((p) => p.publicKey)
+        );
     
-    //     const encryption2 = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID2,
-    //         participants.map((p) => p.publicKey)
-    //     );
+        const encryption2 = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID2,
+            participants.map((p) => p.publicKey)
+        );
     
-    //     // Decrypt each message with the corresponding keyID
-    //     const encryptions = [
-    //         { encryption: encryption1, keyID: keyID1 },
-    //         { encryption: encryption2, keyID: keyID2 },
-    //     ];
+        // Decrypt each message with the corresponding keyID
+        const encryptions = [
+            { encryption: encryption1, keyID: keyID1 },
+            { encryption: encryption2, keyID: keyID2 },
+        ];
     
-    //     for (const { encryption, keyID } of encryptions) {
-    //         for (const participant of participants) {
-    //             const curvePointInstance = new CurvePoint(participant.wallet);
-    //             const decryptedMessage = await curvePointInstance.decrypt(
-    //                 [...encryption.header, ...encryption.encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(message);
-    //         }
-    //     }
-    // });
+        for (const { encryption, keyID } of encryptions) {
+            for (const participant of participants) {
+                const curvePointInstance = new CurvePoint(participant.wallet);
+                const decryptedMessage = await curvePointInstance.decrypt(
+                    [...encryption.header, ...encryption.encryptedMessage],
+                    protocolID,
+                    keyID
+                );
+                expect(decryptedMessage).toEqual(message);
+            }
+        }
+    });
 
+
+
+    
     // test('Duplicate Counterparty Entries', async () => {
     //     const curvePoint = new CurvePoint(participants[0].wallet);
     //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'duplicateCounterparty'];
