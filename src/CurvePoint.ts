@@ -89,10 +89,6 @@ export class CurvePoint {
             // Read version
             const version = reader.readUInt32LE();
     
-            if (version !== 0x00000001) {
-                throw new Error('Unsupported header version.');
-            }
-    
             // Read number of recipients
             const numRecipients = reader.readVarIntNum();
     
