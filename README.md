@@ -1,75 +1,258 @@
-# Overlay Express
+# API
 
-BSV BLOCKCHAIN | Overlay Express
+Links: [API](#api), [Classes](#classes)
 
-An opinionated but configurable Overlay Services deployment system:
-- Uses express for HTTP on a given local port
-- Easy setup with just a private key and a hosting URL
-- Import and configure your topic managers the way you want
-- Add lookup services, with easy factories for Mongo and Knex
-- Implements a configurable web UI to show your custom overlay service docs to the world
-- Uses common Knex/SQL and Mongo databases across all services for efficiency
-- Supports SHIP, SLAP, and GASP sync out of the box (or it can be disabled)
-- Supports Arc callbacks natively for production (or disable it for simplicity during local development)
+## Classes
 
-## Example Usage
+### Class: CurvePoint
 
-Here's a quick example:
-
-```typescript
-import OverlayExpress from '@bsv/overlay-express'
-import dotenv from 'dotenv'
-dotenv.config()
-
-// Hi there! Let's configure Overlay Express!
-const main = async () => {
-
-    // We'll make a new server for our overlay node.
-    const server = new OverlayExpress(
-
-        // Name your overlay node with a one-word lowercase string
-        `testnode`,
-
-        // Provide the private key that gives your node its identity
-        process.env.SERVER_PRIVATE_KEY!,
-
-        // Provide the HTTPS URL where your node is available on the internet
-        process.env.HOSTING_URL!
-    )
-
-    // Decide what port you want the server to listen on.
-    server.configurePort(8080)
-
-    // Connect to your SQL database with Knex
-    await server.configureKnex(process.env.KNEX_URL!)
-
-    // Also, be sure to connect to MongoDB
-    await server.configureMongo(process.env.MONGO_URL!)
-
-    // Here, you will configure the overlay topic managers and lookup services you want.
-    // - Topic managers decide what outputs can go in your overlay
-    // - Lookup services help people find things in your overlay
-    // - Make use of functions like `configureTopicManager` and `configureLookupServiceWithMongo`
-    // ADD YOUR OVERLAY SERVICES HERE
-
-    // For simple local deployments, sync can be disabled.
-    server.configureEnableGASPSync(false)
-
-    // Lastly, configure the engine and start the server!
-    await server.configureEngine()
-    await server.start()
+```ts
+export class CurvePoint {
+    constructor(wallet: Wallet) 
+    async encrypt(message: number[], protocolID: WalletProtocol, keyID: string, recipients: string[], administrators?: string[]): Promise<{
+        encryptedMessage: number[];
+        header: number[];
+    }> 
+    async decrypt(ciphertext: number[], protocolID: WalletProtocol, keyID: string): Promise<number[]> 
+    buildHeader(senderPublicKey: string, recipients: string[], encryptedKeys: {
+        ciphertext: number[];
+    }[], administrators: string[], currentVersion: number): number[] 
+    parseHeader(ciphertext: number[]): {
+        header: number[];
+        message: number[];
+        administrators: string[];
+    } 
+    async addParticipant(iheader: number[], protocolID: WalletProtocol, keyID: string, newParticipant: string): Promise<number[]> 
+    async removeParticipant(iheader: number[], targetParticipant: string): Promise<number[]> 
 }
-
-// Happy hacking :)
-main()
 ```
 
-## Full API Docs
+<details>
 
-Check out [API.md](./API.md) for the API docs.
+<summary>Class CurvePoint Details</summary>
 
-## License
+#### Constructor
 
-The license for the code in this repository is the Open BSV License. Refer to [LICENSE.txt](./LICENSE.txt) for the license text.
+Initializes a new CurvePoint instance.
 
-Thank you for being a part of the BSV Blockchain Overlay Express Project. Let's build the future of BSV Blockchain together!
+```ts
+constructor(wallet: Wallet) 
+```
+
+Argument Details
+
++ **wallet**
+  + The wallet instance providing cryptographic operations.
+
+#### Method addParticipant
+
+Adds a new participant to an existing message group.
+
+```ts
+async addParticipant(iheader: number[], protocolID: WalletProtocol, keyID: string, newParticipant: string): Promise<number[]> 
+```
+
+Returns
+
+The updated message header as an array of bytes.
+
+Argument Details
+
++ **iheader**
+  + The original message header as an array of bytes.
++ **protocolID**
+  + The protocol ID defining cryptographic context.
++ **keyID**
+  + A unique identifier for the key used.
++ **newParticipant**
+  + The public key of the new participant in hex format.
+
+#### Method buildHeader
+
+Builds a message header containing recipient and administrator information.
+
+```ts
+buildHeader(senderPublicKey: string, recipients: string[], encryptedKeys: {
+    ciphertext: number[];
+}[], administrators: string[], currentVersion: number): number[] 
+```
+
+Returns
+
+The constructed header as an array of bytes.
+
+Argument Details
+
++ **senderPublicKey**
+  + The sender's public key in hex format.
++ **recipients**
+  + An array of recipient public keys in hex format.
++ **encryptedKeys**
+  + An array of objects containing encrypted symmetric keys.
++ **administrators**
+  + An array of administrator public keys in hex format.
++ **currentVersion**
+  + The current header version number.
+
+#### Method decrypt
+
+Decrypts a message intended for the recipient.
+
+```ts
+async decrypt(ciphertext: number[], protocolID: WalletProtocol, keyID: string): Promise<number[]> 
+```
+
+Returns
+
+The decrypted message as an array of bytes.
+
+Argument Details
+
++ **ciphertext**
+  + The ciphertext containing the message header and encrypted message.
++ **protocolID**
+  + The protocol ID defining cryptographic context.
++ **keyID**
+  + A unique identifier for the key used.
+
+#### Method encrypt
+
+Encrypts a message for a group of recipients.
+
+```ts
+async encrypt(message: number[], protocolID: WalletProtocol, keyID: string, recipients: string[], administrators?: string[]): Promise<{
+    encryptedMessage: number[];
+    header: number[];
+}> 
+```
+
+Returns
+
+An object containing the encrypted message and the message header.
+
+Argument Details
+
++ **message**
+  + The plaintext message to encrypt as an array of bytes.
++ **protocolID**
+  + The protocol ID defining cryptographic context.
++ **keyID**
+  + A unique identifier for the key used.
++ **recipients**
+  + An array of recipient public keys in hex format.
++ **administrators**
+  + (Optional) An array of administrator public keys.
+
+#### Method parseHeader
+
+Parses a message header and extracts key information.
+
+```ts
+parseHeader(ciphertext: number[]): {
+    header: number[];
+    message: number[];
+    administrators: string[];
+} 
+```
+
+Returns
+
+An object containing the parsed header, message, and administrator list.
+
+Argument Details
+
++ **ciphertext**
+  + The ciphertext containing the header and message.
+
+#### Method removeParticipant
+
+Removes a participant from the message group.
+Only administrators are authorized to perform this action.
+
+```ts
+async removeParticipant(iheader: number[], targetParticipant: string): Promise<number[]> 
+```
+
+Returns
+
+The updated message header as an array of bytes.
+
+Argument Details
+
++ **iheader**
+  + The original message header as an array of bytes.
++ **targetParticipant**
+  + The public key of the participant to remove in hex format.
+
+</details>
+
+# Usage Examples
+
+## Encrypt and Decrypt a Message
+
+```ts
+import { CurvePoint } from '@p2ppsr/curvepoint';
+import { Wallet } from '@bsv/sdk';
+
+// Step 1: Initialize a wallet instance
+const wallet = new Wallet(/* ... wallet configuration ... */);
+
+// Step 2: Create a CurvePoint instance
+const curvePoint = new CurvePoint(wallet);
+
+// Step 3: Encrypt a message
+const message = [1, 2, 3, 4, 5];
+const recipients = ['recipientPublicKey1', 'recipientPublicKey2'];
+const administrators = ['adminPublicKey1', 'adminPublicKey2'];
+const protocolID = ['App', 'exampleProtocol'];
+const keyID = 'exampleKey';
+
+const { encryptedMessage, header } = await curvePoint.encrypt(
+    message,
+    protocolID,
+    keyID,
+    recipients,
+    administrators
+);
+
+// Step 4: Decrypt the message as a recipient
+const decryptedMessage = await curvePoint.decrypt(
+    [...header, ...encryptedMessage],
+    protocolID,
+    keyID
+);
+
+console.log('Decrypted Message:', decryptedMessage);
+```
+
+## Add a Participant to an Existing Header
+
+```ts
+const updatedHeader = await curvePoint.addParticipant(
+    header,
+    protocolID,
+    keyID,
+    'newParticipantPublicKey'
+);
+
+console.log('Updated Header:', updatedHeader);
+```
+
+## Remove a Participant (Administrator Only)
+
+```ts
+try {
+    const updatedHeader = await curvePoint.removeParticipant(
+        header,
+        'participantToRemovePublicKey'
+    );
+
+    console.log('Header after participant removal:', updatedHeader);
+} catch (error) {
+    console.error('Failed to remove participant:', error.message);
+}
+```
+
+Links: [API](#api), [Classes](#classes)
+
+---

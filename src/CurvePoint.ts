@@ -1,3 +1,13 @@
+/**
+ * CurvePoint
+ * 
+ * Provides functionality for secure group messaging using elliptic curve cryptography.
+ * 
+ * Key features:
+ * - Encrypt messages for a group with individual symmetric key sharing.
+ * - Decrypt messages intended for a specific recipient.
+ * - Manage group participants, including adding and revoking access.
+ */
 import { Wallet } from '@bsv/sdk';
 import { SymmetricKey } from '@bsv/sdk';
 import { Utils } from '@bsv/sdk';
@@ -6,10 +16,25 @@ import { WalletProtocol } from '@bsv/sdk';
 export class CurvePoint {
     private wallet: Wallet;
 
+    /**
+     * Initializes a new CurvePoint instance.
+     * 
+     * @param wallet - The wallet instance providing cryptographic operations.
+     */
     constructor(wallet: Wallet) {
         this.wallet = wallet;
     }
 
+    /**
+     * Encrypts a message for a group of recipients.
+     * 
+     * @param message - The plaintext message to encrypt as an array of bytes.
+     * @param protocolID - The protocol ID defining cryptographic context.
+     * @param keyID - A unique identifier for the key used.
+     * @param recipients - An array of recipient public keys in hex format.
+     * @param administrators - (Optional) An array of administrator public keys.
+     * @returns An object containing the encrypted message and the message header.
+     */
     async encrypt(
         message: number[],
         protocolID: WalletProtocol,
@@ -69,6 +94,14 @@ export class CurvePoint {
         }
     }
 
+    /**
+     * Decrypts a message intended for the recipient.
+     * 
+     * @param ciphertext - The ciphertext containing the message header and encrypted message.
+     * @param protocolID - The protocol ID defining cryptographic context.
+     * @param keyID - A unique identifier for the key used.
+     * @returns The decrypted message as an array of bytes.
+     */
     async decrypt(
         ciphertext: number[],
         protocolID: WalletProtocol,
@@ -152,6 +185,16 @@ export class CurvePoint {
         }
     }
 
+    /**
+     * Builds a message header containing recipient and administrator information.
+     * 
+     * @param senderPublicKey - The sender's public key in hex format.
+     * @param recipients - An array of recipient public keys in hex format.
+     * @param encryptedKeys - An array of objects containing encrypted symmetric keys.
+     * @param administrators - An array of administrator public keys in hex format.
+     * @param currentVersion - The current header version number.
+     * @returns The constructed header as an array of bytes.
+     */
     buildHeader(
         senderPublicKey: string,
         recipients: string[],
@@ -255,6 +298,12 @@ export class CurvePoint {
         return fullHeader;
     }
 
+    /**
+     * Parses a message header and extracts key information.
+     * 
+     * @param ciphertext - The ciphertext containing the header and message.
+     * @returns An object containing the parsed header, message, and administrator list.
+     */
     parseHeader(ciphertext: number[]): { header: number[]; message: number[]; administrators: string[] } {
         try {
             const reader = new Utils.Reader(ciphertext);
@@ -348,6 +397,15 @@ export class CurvePoint {
         }
     }
 
+    /**
+     * Adds a new participant to an existing message group.
+     * 
+     * @param iheader - The original message header as an array of bytes.
+     * @param protocolID - The protocol ID defining cryptographic context.
+     * @param keyID - A unique identifier for the key used.
+     * @param newParticipant - The public key of the new participant in hex format.
+     * @returns The updated message header as an array of bytes.
+     */
     async addParticipant(
         iheader: number[],
         protocolID: WalletProtocol,
@@ -451,6 +509,14 @@ export class CurvePoint {
         }
     }
 
+    /**
+     * Removes a participant from the message group.
+     * Only administrators are authorized to perform this action.
+     * 
+     * @param iheader - The original message header as an array of bytes.
+     * @param targetParticipant - The public key of the participant to remove in hex format.
+     * @returns The updated message header as an array of bytes.
+     */
     async removeParticipant(iheader: number[], targetParticipant: string): Promise<number[]> {
         try {
             // Step 1: Parse the header
