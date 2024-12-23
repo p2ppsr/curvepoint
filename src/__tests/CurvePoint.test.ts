@@ -1,7 +1,7 @@
 import { PrivateKey } from '@bsv/sdk';
 import { ProtoWallet } from '@bsv/sdk';
 import { CurvePoint } from '../CurvePoint';
-import { SymmetricKey } from '@bsv/sdk';
+//import { SymmetricKey } from '@bsv/sdk';
 import { Utils } from '@bsv/sdk';
 import { SecurityLevels, SecurityLevel } from '@bsv/sdk';
 
@@ -26,6 +26,7 @@ describe('CurvePoint Library', () => {
         );
     });
     
+    // Encrypt and decrypt message successfully
     test('Encrypt and decrypt message successfully', async () => {
         // Step 1: Create an instance of CurvePoint for the sender
         const sender = participants[0];
@@ -70,8 +71,7 @@ describe('CurvePoint Library', () => {
         }
     });
     
-    
-    
+    // Faile to decrypt with incorrect key
     test('Fail to decrypt with incorrect key', async () => {
         const protocolID: [SecurityLevel, string] = [SecurityLevels.Counterparty, 'testProtocol'];
         const sender = participants[0];
@@ -104,8 +104,7 @@ describe('CurvePoint Library', () => {
         ).rejects.toThrow("Decryption failed: Your key is not found in the header.");
     });
     
-    
-
+    // Encrypt and decrypt empty message
     test('Encrypt and decrypt empty message', async () => {
         // Step 1: Create an instance of CurvePoint for the sender
         const sender = participants[0];
@@ -150,7 +149,7 @@ describe('CurvePoint Library', () => {
         }
     });
     
-
+    // Handle malformed header gracefully
     test('Handle malformed header gracefully', async () => {
         // Step 1: Create an instance of CurvePoint for the sender
         const curvePoint = new CurvePoint(participants[0].wallet);
@@ -175,8 +174,7 @@ describe('CurvePoint Library', () => {
         ).rejects.toThrow('Failed to parse header or message.');
     });
     
-    
-
+    // Encrypt and decrypt with single counterparty
     test('Encrypt and decrypt with single counterparty', async () => {
         // Step 1: Use participant[1] for encryption and decryption (single counterparty)
         const encryptingParticipant = participants[1];
@@ -242,8 +240,7 @@ describe('CurvePoint Library', () => {
         }
     });
     
-    
-
+    // Handle large group of counterparties
     test('Handle large group of counterparties', async () => {
         // Step 1: Create a large group of counterparties
         const largeGroup: { privateKey: PrivateKey; publicKey: string }[] = Array(50)
@@ -306,7 +303,7 @@ describe('CurvePoint Library', () => {
         }
     });
        
-
+    // Subgroup Messaging
     test('Subgroup Messaging', async () => {
         // Step 1: Initialize CurvePoint for the sender
         const curvePointSender = new CurvePoint(participants[0].wallet);
@@ -368,9 +365,7 @@ describe('CurvePoint Library', () => {
         }
     });
     
-    
-    
-
+    // Partial Revocation
     test('Partial Revocation', async () => {
         // Step 1: Initialize CurvePoint for the sender
         const curvePoint = new CurvePoint(participants[0].wallet);
@@ -430,10 +425,7 @@ describe('CurvePoint Library', () => {
         }
     });
     
-
-    
-    
-    
+    // Administrator Restriction: Only administrators can revoke access
     test('Administrator Restriction: Only administrators can revoke access', async () => {
         // Step 1: Initialize CurvePoint for the sender
         const admin = participants[0]; // Sender is also an admin
@@ -472,11 +464,7 @@ describe('CurvePoint Library', () => {
         ).rejects.toThrow('Failed to remove participant.');
     });
     
-    
-    
-    
-    
-
+    // Access Granting: Grant new participant access to a previously encrypted message
     test('Access Granting: Grant new participant access to a previously encrypted message', async () => {
         const curvePoint = new CurvePoint(participants[0].wallet);
         const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'accessGrantProtocol'];
@@ -531,564 +519,583 @@ describe('CurvePoint Library', () => {
         }
     });
     
+    // Message-Specific Key Derivation: Unique key derivation per message
+    test('Message-Specific Key Derivation: Unique key derivation per message', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'messageSpecificKey'];
     
+        // Encrypt two messages with different keyIDs
+        const keyID1 = 'messageKey1';
+        const keyID2 = 'messageKey2';
+    
+        const encryption1 = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID1,
+            participants.map((p) => p.publicKey)
+        );
+    
+        const encryption2 = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID2,
+            participants.map((p) => p.publicKey)
+        );
+    
+        // Decrypt each message with the corresponding keyID
+        const encryptions = [
+            { encryption: encryption1, keyID: keyID1 },
+            { encryption: encryption2, keyID: keyID2 },
+        ];
+    
+        for (const { encryption, keyID } of encryptions) {
+            for (const participant of participants) {
+                const curvePointInstance = new CurvePoint(participant.wallet);
+                const decryptedMessage = await curvePointInstance.decrypt(
+                    [...encryption.header, ...encryption.encryptedMessage],
+                    protocolID,
+                    keyID
+                );
+                expect(decryptedMessage).toEqual(message);
+            }
+        }
+    });
 
-    // test('Message-Specific Key Derivation: Unique key derivation per message', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'messageSpecificKey'];
-    
-    //     // Encrypt two messages with different keyIDs
-    //     const keyID1 = 'messageKey1';
-    //     const keyID2 = 'messageKey2';
-    
-    //     const encryption1 = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID1,
-    //         participants.map((p) => p.publicKey)
-    //     );
-    
-    //     const encryption2 = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID2,
-    //         participants.map((p) => p.publicKey)
-    //     );
-    
-    //     // Decrypt each message with the corresponding keyID
-    //     const encryptions = [
-    //         { encryption: encryption1, keyID: keyID1 },
-    //         { encryption: encryption2, keyID: keyID2 },
-    //     ];
-    
-    //     for (const { encryption, keyID } of encryptions) {
-    //         for (const participant of participants) {
-    //             const curvePointInstance = new CurvePoint(participant.wallet);
-    //             const decryptedMessage = await curvePointInstance.decrypt(
-    //                 [...encryption.header, ...encryption.encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(message);
-    //         }
-    //     }
-    // });
-
-
-
-
-    // test('Duplicate Counterparty Entries', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'duplicateCounterparty'];
-    //     const keyID = 'duplicateKey';
-    
-    //     // Include duplicate public keys in the counterparty list
-    //     const counterparties = [
-    //         participants[1].publicKey,
-    //         participants[2].publicKey,
-    //         participants[1].publicKey, // Duplicate
-    //     ];
-    
-    //     try {
-    //         const { encryptedMessage, header } = await curvePoint.encrypt(
-    //             message,
-    //             protocolID,
-    //             keyID,
-    //             counterparties
-    //         );
-    
-    //         // Ensure all unique participants can decrypt the message
-    //         const uniqueCounterparties = Array.from(new Set(counterparties)); // Deduplicate for validation
-    //         for (const publicKey of uniqueCounterparties) {
-    //             const participant = participants.find((p) => p.publicKey === publicKey);
-    
-    //             // Handle case where participant is not found
-    //             if (!participant) {
-    //                 throw new Error(`Participant with publicKey ${publicKey} not found.`);
-    //             }
-    
-    //             const participantCurvePoint = new CurvePoint(participant.wallet);
-    
-    //             const decryptedMessage = await participantCurvePoint.decrypt(
-    //                 [...header, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(message);
-    //         }
-    //     } catch (error) {
-    //         console.error('Encryption failed with duplicate counterparties:', error);
-    //         throw error; // Rethrow to fail the test if unexpected error occurs
-    //     }
-    // });    
-
-    // test('Zero Recipients', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'zeroRecipients'];
-    //     const keyID = 'noRecipientsKey';
-    
-    //     // Attempt to encrypt with an empty counterparties list
-    //     const counterparties: string[] = [];
-    
-    //     await expect(
-    //         curvePoint.encrypt(message, protocolID, keyID, counterparties)
-    //     ).rejects.toThrow('No recipients specified for encryption.');
-    // });
-    
-    // test('Unordered Recipients', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'unorderedRecipients'];
-    //     const keyID = 'unorderedKey';
-    
-    //     // Create counterparties in different orders
-    //     const counterpartiesOrdered = participants.map((p) => p.publicKey);
-    //     const counterpartiesUnordered = [...counterpartiesOrdered].reverse();
-    
-    //     // Encrypt the message with ordered counterparties
-    //     const { encryptedMessage, header } = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         counterpartiesOrdered
-    //     );
-    
-    //     // Verify that all participants can decrypt regardless of counterparty order
-    //     for (const participant of participants) {
-    //         const participantCurvePoint = new CurvePoint(participant.wallet);
-    
-    //         // Decrypt using the unordered counterparties
-    //         const decryptedMessage = await participantCurvePoint.decrypt(
-    //             [...header, ...encryptedMessage],
-    //             protocolID,
-    //             keyID
-    //         );
-    //         expect(decryptedMessage).toEqual(message);
-    //     }
-    // });
-
-    // test('Empty Header', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'emptyHeader'];
-    //     const keyID = 'emptyHeaderKey';
-    
-    //     // Create a completely empty header
-    //     const emptyHeader: number[] = [];
-    //     const malformedCiphertext = [...emptyHeader, ...[1, 2, 3, 4]];
-    
-    //     // Attempt to decrypt with an empty header
-    //     await expect(
-    //         curvePoint.decrypt(malformedCiphertext, protocolID, keyID)
-    //     ).rejects.toThrow('Failed to parse header or message.');
-    // });
-
-    // test('Malformed Encrypted Key', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'malformedKey'];
-    //     const keyID = 'malformedKey';
-    
-    //     // Encrypt the message normally
-    //     const { encryptedMessage, header } = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         participants.map((p) => p.publicKey)
-    //     );
-    
-    //     // Corrupt the encrypted key for the first counterparty
-    //     const reader = new Utils.Reader(header);
-    //     const headerLength = reader.readVarIntNum();
-    //     const malformedHeader = [...reader.read(headerLength)];
-    //     malformedHeader[10] = 255; // Arbitrarily corrupt a byte in the header
-    
-    //     // Attempt to decrypt with the malformed header
-    //     const malformedCiphertext = [...malformedHeader, ...encryptedMessage];
-    //     await expect(
-    //         curvePoint.decrypt(malformedCiphertext, protocolID, keyID)
-    //     ).rejects.toThrow('Decryption failed: Your key is not found in the header.');
-    // });
-
-    // test('Replay Attack Prevention', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'replayAttack'];
-    //     const keyID = 'replayKey';
-    
-    //     // Encrypt the same message twice
-    //     const encryption1 = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         participants.map((p) => p.publicKey)
-    //     );
-    
-    //     const encryption2 = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         participants.map((p) => p.publicKey)
-    //     );
-    
-    //     // Ensure the ciphertexts are different
-    //     expect(encryption1.encryptedMessage).not.toEqual(encryption2.encryptedMessage);
-    //     expect(encryption1.header).not.toEqual(encryption2.header);
-    
-    //     // Decrypt both messages to verify correctness
-    //     for (const encryption of [encryption1, encryption2]) {
-    //         for (const participant of participants) {
-    //             const participantCurvePoint = new CurvePoint(participant.wallet);
-    
-    //             const decryptedMessage = await participantCurvePoint.decrypt(
-    //                 [...encryption.header, ...encryption.encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(message);
-    //         }
-    //     }
-    // });
-
-    // test('Header Tampering', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'headerTampering'];
-    //     const keyID = 'tamperedKey';
-    
-    //     const { encryptedMessage, header } = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         participants.map((p) => p.publicKey)
-    //     );
-    
-    //     // Tamper with the header by modifying a public key
-    //     const tamperedHeader = [...header];
-    //     tamperedHeader[10] = tamperedHeader[10] ^ 0xff; // Invert a random byte in the header
-    
-    //     // Attempt to decrypt with the tampered header
-    //     const tamperedCiphertext = [...tamperedHeader, ...encryptedMessage];
-    
-    //     await expect(
-    //         curvePoint.decrypt(tamperedCiphertext, protocolID, keyID)
-    //     ).rejects.toThrow('Decryption failed: Your key is not found in the header.');
-    // });
-
-    // test('Key Reuse', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'keyReuse'];
-    //     const keyID = 'reusedKey';
-    
-    //     // Generate a single symmetric key to reuse across multiple encryptions
-    //     const symmetricKey = SymmetricKey.fromRandom();
-    
-    //     // Encrypt two different messages with the same key
-    //     const message1 = [1, 2, 3, 4];
-    //     const message2 = [5, 6, 7, 8];
-    
-    //     const encryptedMessage1 = symmetricKey.encrypt(message1) as number[];
-    //     const encryptedMessage2 = symmetricKey.encrypt(message2) as number[];
-    
-    //     const header = curvePoint.buildHeader(
-    //         participants.map((p) => p.publicKey),
-    //         [symmetricKey.toArray(), symmetricKey.toArray()]
-    //     );
-    
-    //     // Verify that both messages can be decrypted securely
-    //     for (const [encryptedMessage, originalMessage] of [
-    //         [encryptedMessage1, message1],
-    //         [encryptedMessage2, message2],
-    //     ]) {
-    //         for (const participant of participants) {
-    //             const participantCurvePoint = new CurvePoint(participant.wallet);
-    //             const decryptedMessage = await participantCurvePoint.decrypt(
-    //                 [...header, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(originalMessage);
-    //         }
-    //     }
-    // });
-
-    // test('Incorrect IV Handling', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'incorrectIV'];
-    //     const keyID = 'ivTestKey';
-    
-    //     const { encryptedMessage, header } = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         participants.map((p) => p.publicKey)
-    //     );
-    
-    //     // Tamper with the IV in the encrypted message
-    //     const tamperedEncryptedMessage = [...encryptedMessage];
-    //     tamperedEncryptedMessage[0] = tamperedEncryptedMessage[0] ^ 0xff; // Corrupt the first byte of the encrypted message
-    
-    //     const tamperedCiphertext = [...header, ...tamperedEncryptedMessage];
-    
-    //     // Attempt to decrypt with the tampered IV
-    //     await expect(
-    //         curvePoint.decrypt(tamperedCiphertext, protocolID, keyID)
-    //     ).rejects.toThrow('Decryption failed: Integrity check failed.');
-    // });
-
-    // test('Very Large Groups', async () => {
-    //     const largeGroupSize = 1000;
-    //     const largeGroup: string[] = Array(largeGroupSize)
-    //         .fill(null)
-    //         .map(() => {
-    //             const privateKey = PrivateKey.fromRandom();
-    //             const publicKey = privateKey.toPublicKey();
-    //             return publicKey.toDER('hex') as string; // Explicitly cast to string
-    //         });
-
-    
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'veryLargeGroup'];
-    //     const keyID = 'largeGroupKey';
-    
-    //     const { encryptedMessage, header } = await curvePoint.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         largeGroup
-    //     );
-    
-    //     // Verify the header and encrypted message
-    //     expect(header).toBeDefined();
-    //     expect(header.length).toBeGreaterThan(0);
-    //     expect(encryptedMessage).toBeDefined();
-    //     expect(encryptedMessage.length).toBeGreaterThan(0);
-    
-    //     // Spot-check decryption for a few participants
-    //     for (let i = 0; i < 10; i++) {
-    //         const publicKey = largeGroup[i];
-    //         const participant = participants.find((p) => p.publicKey === publicKey);
-    
-    //         if (participant) {
-    //             const participantCurvePoint = new CurvePoint(participant.wallet);
-    //             const decryptedMessage = await participantCurvePoint.decrypt(
-    //                 [...header, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             expect(decryptedMessage).toEqual(message);
-    //         }
-    //     }
-    // });
-    
-    // test('Chunked Encryption', async () => {
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'chunkedEncryption'];
-    //     const keyID = 'chunkedKey';
-    
-    //     // Create a large message
-    //     const largeMessage: number[] = Array(10_000).fill(1); // A message with 10,000 numbers
-    
-    //     // Split the large message into chunks (e.g., 1,000 per chunk)
-    //     const chunkSize = 1_000;
-    //     const chunks: number[][] = []; // Explicitly define the type for chunks
-    //     for (let i = 0; i < largeMessage.length; i += chunkSize) {
-    //         chunks.push(largeMessage.slice(i, i + chunkSize));
-    //     }
-    
-    //     const encryptedChunks = await Promise.all(
-    //         chunks.map(async (chunk) =>
-    //             curvePoint.encrypt(chunk, protocolID, keyID, participants.map((p) => p.publicKey))
-    //         )
-    //     );
-    
-    //     // Decrypt each chunk and reconstruct the original message
-    //     let reconstructedMessage: number[] = [];
-    //     for (const { encryptedMessage, header } of encryptedChunks) {
-    //         for (const participant of participants) {
-    //             const participantCurvePoint = new CurvePoint(participant.wallet);
-    //             const decryptedChunk = await participantCurvePoint.decrypt(
-    //                 [...header, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             reconstructedMessage = reconstructedMessage.concat(decryptedChunk);
-    //         }
-    //     }
-    
-    //     // Verify the reconstructed message matches the original
-    //     expect(reconstructedMessage).toEqual(largeMessage);
-    // });
-
-    // test('Encryption and Decryption Timing', async () => {
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'timingTest'];
-    //     const keyID = 'timingKey';
-    
-    //     const groupSizes = [10, 100, 500]; // Varying group sizes
-    //     const messageSizes = [100, 1000, 10000]; // Varying message sizes
-    
-    //     for (const groupSize of groupSizes) {
-    //         const group: string[] = Array(groupSize)
-    //             .fill(null)
-    //             .map(() => {
-    //                 const privateKey = PrivateKey.fromRandom();
-    //                 return privateKey.toPublicKey().toDER('hex') as string; // Ensure it's a string
-    //             });
-    
-    //         for (const messageSize of messageSizes) {
-    //             const message = Array(messageSize).fill(1); // Large message
-    //             const curvePoint = new CurvePoint(participants[0].wallet);
-    
-    //             // Measure encryption time
-    //             const startEncryption = performance.now();
-    //             const { encryptedMessage, header } = await curvePoint.encrypt(
-    //                 message,
-    //                 protocolID,
-    //                 keyID,
-    //                 group
-    //             );
-    //             const endEncryption = performance.now();
-    //             console.log(
-    //                 `Encryption time for group size ${groupSize} and message size ${messageSize}: ${
-    //                     endEncryption - startEncryption
-    //                 } ms`
-    //             );
-    
-    //             // Measure decryption time
-    //             const startDecryption = performance.now();
-    //             const decryptedMessage = await curvePoint.decrypt(
-    //                 [...header, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    //             const endDecryption = performance.now();
-    //             console.log(
-    //                 `Decryption time for group size ${groupSize} and message size ${messageSize}: ${
-    //                     endDecryption - startDecryption
-    //                 } ms`
-    //             );
-    
-    //             expect(decryptedMessage).toEqual(message);
-    //         }
-    //     }
-    // });    
-    
-    // test('Memory Usage', async () => {
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'memoryTest'];
-    //     const keyID = 'memoryKey';
-    
-    //     const largeGroupSize = 1000; // Large number of participants
-    //     const largeMessageSize = 100_000; // Large message
-    //     const largeGroup: string[] = Array(largeGroupSize)
-    //         .fill(null)
-    //         .map(() => {
-    //             const privateKey = PrivateKey.fromRandom();
-    //             return privateKey.toPublicKey().toDER('hex') as string; // Ensure it is a string
-    //         });
-    //     const largeMessage = Array(largeMessageSize).fill(1);
-    
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    
-    //     console.log('Memory usage before encryption:', process.memoryUsage());
-    
-    //     // Encrypt
-    //     const { encryptedMessage, header } = await curvePoint.encrypt(
-    //         largeMessage,
-    //         protocolID,
-    //         keyID,
-    //         largeGroup
-    //     );
-    
-    //     console.log('Memory usage after encryption:', process.memoryUsage());
-    
-    //     // Decrypt
-    //     const decryptedMessage = await curvePoint.decrypt(
-    //         [...header, ...encryptedMessage],
-    //         protocolID,
-    //         keyID
-    //     );
-    
-    //     console.log('Memory usage after decryption:', process.memoryUsage());
-    
-    //     expect(decryptedMessage).toEqual(largeMessage);
-    // });
-
-    // test('Cross-Wallet Compatibility', async () => {
-    //     const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'crossWallet'];
-    //     const keyID = 'crossWalletKey';
-    
-    //     // Create wallets for two participants
-    //     const participant1 = {
-    //         privateKey: PrivateKey.fromRandom(),
-    //         wallet: new ProtoWallet(PrivateKey.fromRandom()),
-    //     };
-    //     const participant2 = {
-    //         privateKey: PrivateKey.fromRandom(),
-    //         wallet: new ProtoWallet(PrivateKey.fromRandom()),
-    //     };
-    
-    //     // Get public keys for the participants
-    //     const publicKey1 = (await participant1.wallet.getPublicKey({ identityKey: true })).publicKey;
-    //     const publicKey2 = (await participant2.wallet.getPublicKey({ identityKey: true })).publicKey;
-    
-    //     // Ensure public keys are available
-    //     expect(publicKey1).toBeDefined();
-    //     expect(publicKey2).toBeDefined();
-    
-    //     // Participant 1 encrypts a message for participant 2
-    //     const message = [1, 2, 3, 4];
-    //     const curvePoint1 = new CurvePoint(participant1.wallet);
-    
-    //     const { encryptedMessage, header } = await curvePoint1.encrypt(
-    //         message,
-    //         protocolID,
-    //         keyID,
-    //         [publicKey2]
-    //     );
-    
-    //     // Participant 2 decrypts the message
-    //     const curvePoint2 = new CurvePoint(participant2.wallet);
-    //     const decryptedMessage = await curvePoint2.decrypt(
-    //         [...header, ...encryptedMessage],
-    //         protocolID,
-    //         keyID
-    //     );
-    
-    //     // Verify the decrypted message matches the original
-    //     expect(decryptedMessage).toEqual(message);
-    // });
-
-    // test('Protocol Compatibility', async () => {
-    //     const keyID = 'protocolTestKey';
-    //     const protocolIDs: [SecurityLevel, string][] = [
-    //         [SecurityLevels.Silent, 'protocolSilent'],
-    //         [SecurityLevels.App, 'protocolApp'],
-    //         [SecurityLevels.Counterparty, 'protocolCounterparty'],
-    //     ];
-    
-    //     const curvePoint = new CurvePoint(participants[0].wallet);
-    
-    //     // Encrypt and decrypt a message for each protocolID
-    //     for (const protocolID of protocolIDs) {
-    //         const message = [42, 43, 44, 45]; // Example message
-    //         const counterparties = participants.map((p) => p.publicKey);
-    
-    //         // Encrypt the message
-    //         const { encryptedMessage, header } = await curvePoint.encrypt(
-    //             message,
-    //             protocolID,
-    //             keyID,
-    //             counterparties
-    //         );
-    
-    //         // Ensure each participant can decrypt the message
-    //         for (const participant of participants) {
-    //             const participantCurvePoint = new CurvePoint(participant.wallet);
-    //             const decryptedMessage = await participantCurvePoint.decrypt(
-    //                 [...header, ...encryptedMessage],
-    //                 protocolID,
-    //                 keyID
-    //             );
-    
-    //             // Verify the decrypted message matches the original
-    //             expect(decryptedMessage).toEqual(message);
-    //         }
-    //     }
-    // });
+    // Duplicate Counterparty Entries
+    test('Duplicate Counterparty Entries', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'duplicateCounterparty'];
+        const keyID = 'duplicateKey';
+    
+        // Include duplicate public keys in the counterparty list
+        const counterparties = [
+            participants[1].publicKey,
+            participants[2].publicKey,
+            participants[1].publicKey, // Duplicate
+        ];
+    
+        const { encryptedMessage, header } = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID,
+            counterparties
+        );
+    
+        // Ensure all unique participants can decrypt the message
+        const uniqueCounterparties = Array.from(new Set(counterparties)); // Deduplicate for validation
+        for (const publicKey of uniqueCounterparties) {
+            const participant = participants.find((p) => p.publicKey === publicKey);
+    
+            // Ensure participant exists
+            expect(participant).toBeDefined();
+    
+            const participantCurvePoint = new CurvePoint(participant!.wallet);
+    
+            const decryptedMessage = await participantCurvePoint.decrypt(
+                [...header, ...encryptedMessage],
+                protocolID,
+                keyID
+            );
+    
+            expect(decryptedMessage).toEqual(message);
+        }
+    });
+      
+    // Zero Recipients
+    test('Zero Recipients', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'zeroRecipients'];
+        const keyID = 'noRecipientsKey';
+    
+        // Attempt to encrypt with an empty recipients list
+        const recipients: string[] = [];
+    
+        await expect(
+            curvePoint.encrypt(message, protocolID, keyID, recipients)
+        ).rejects.toThrow('No recipients specified for encryption.');
+    });
+    
+    // Unordered Recipients
+    test('Unordered Recipients', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'unorderedRecipients'];
+        const keyID = 'unorderedKey';
+    
+        // Create recipients in different orders
+        const recipientsOrdered = participants.map((p) => p.publicKey);
+        const recipientsUnordered = [...recipientsOrdered].reverse();
+    
+        // Encrypt the message with ordered recipients
+        const { encryptedMessage, header } = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID,
+            recipientsOrdered
+        );
+    
+        // Verify that all participants can decrypt regardless of recipient order
+        for (const participant of participants) {
+            const participantCurvePoint = new CurvePoint(participant.wallet);
+    
+            const decryptedMessage = await participantCurvePoint.decrypt(
+                [...header, ...encryptedMessage],
+                protocolID,
+                keyID
+            );
+    
+            expect(decryptedMessage).toEqual(message);
+        }
+    });
+    
+    // Empty Header
+    test('Empty Header', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'emptyHeader'];
+        const keyID = 'emptyHeaderKey';
+    
+        // Create a completely empty header
+        const emptyHeader: number[] = [];
+        const malformedCiphertext = [...emptyHeader, ...[1, 2, 3, 4]];
+    
+        // Attempt to decrypt with an empty header
+        await expect(
+            curvePoint.decrypt(malformedCiphertext, protocolID, keyID)
+        ).rejects.toThrow('Decryption failed: Your key is not found in the header.');        
+    });
+    
+    // Malformed Encrypted Key
+    test('Malformed Encrypted Key', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'malformedKey'];
+        const keyID = 'malformedKey';
+    
+        // Encrypt the message normally
+        const { encryptedMessage, header } = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID,
+            participants.map((p) => p.publicKey)
+        );
+    
+        // Corrupt the encrypted key for the first counterparty
+        const reader = new Utils.Reader(header);
+        const headerLength = reader.readVarIntNum();
+        const malformedHeader = [...reader.read(headerLength)];
+        malformedHeader[10] = 255; // Arbitrarily corrupt a byte in the header
+    
+        // Attempt to decrypt with the malformed header
+        const malformedCiphertext = [...malformedHeader, ...encryptedMessage];
+        await expect(
+            curvePoint.decrypt(malformedCiphertext, protocolID, keyID)
+        ).rejects.toThrow('Decryption failed: Failed to parse header or message.');
+    });
+    
+    // Replay Attack Prevention
+    test('Replay Attack Prevention', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'replayAttack'];
+        const keyID = 'replayKey';
+    
+        // Encrypt the same message twice
+        const encryption1 = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID,
+            participants.map((p) => p.publicKey)
+        );
+    
+        const encryption2 = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID,
+            participants.map((p) => p.publicKey)
+        );
+    
+        // Ensure the ciphertexts and headers are different
+        expect(encryption1.encryptedMessage).not.toEqual(encryption2.encryptedMessage);
+        expect(encryption1.header).not.toEqual(encryption2.header);
+    
+        // Decrypt both messages to verify correctness
+        for (const encryption of [encryption1, encryption2]) {
+            for (const participant of participants) {
+                const participantCurvePoint = new CurvePoint(participant.wallet);
+    
+                const decryptedMessage = await participantCurvePoint.decrypt(
+                    [...encryption.header, ...encryption.encryptedMessage],
+                    protocolID,
+                    keyID
+                );
+                expect(decryptedMessage).toEqual(message);
+            }
+        }
+    });
+    
+    // Header Tampering
+    test('Header Tampering', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'headerTampering'];
+        const keyID = 'tamperedKey';
+    
+        const { encryptedMessage, header } = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID,
+            participants.map((p) => p.publicKey)
+        );
+    
+        // Tamper with the header by modifying a public key
+        const tamperedHeader = [...header];
+        tamperedHeader[10] = tamperedHeader[10] ^ 0xff; // Invert a random byte in the header
+    
+        // Attempt to decrypt with the tampered header
+        const tamperedCiphertext = [...tamperedHeader, ...encryptedMessage];
+    
+        await expect(
+            curvePoint.decrypt(tamperedCiphertext, protocolID, keyID)
+        ).rejects.toThrow('Decryption failed: Your key is not found in the header.');
+    });
+    
+    // Incorrect IV Handling
+    test('Incorrect IV Handling', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'incorrectIV'];
+        const keyID = 'ivTestKey';
+    
+        const { encryptedMessage, header } = await curvePoint.encrypt(
+            message,
+            protocolID,
+            keyID,
+            participants.map((p) => p.publicKey)
+        );
+    
+        // Tamper with the IV in the encrypted message
+        const tamperedEncryptedMessage = [...encryptedMessage];
+        tamperedEncryptedMessage[0] = tamperedEncryptedMessage[0] ^ 0xff; // Corrupt the first byte of the encrypted message
+    
+        const tamperedCiphertext = [...header, ...tamperedEncryptedMessage];
+    
+        // Attempt to decrypt with the tampered IV
+        await expect(
+            curvePoint.decrypt(tamperedCiphertext, protocolID, keyID)
+        ).rejects.toThrow('Decryption failed: Decryption failed!');
+    });
+    
+    // Handle very large group of counterparties
+    test('Handle very large group of counterparties', async () => {
+        // Step 1: Create a very large group of counterparties
+        const largeGroup: { privateKey: PrivateKey; publicKey: string }[] = Array(1000) // Increase size
+            .fill(null)
+            .map(() => {
+                const privateKey = PrivateKey.fromRandom();
+                const publicKey = privateKey.toPublicKey().toDER('hex'); // Convert public key to hex string
+    
+                if (typeof publicKey !== 'string') {
+                    throw new Error('Public key conversion to hex failed.');
+                }
+    
+                return { privateKey, publicKey };
+            });
+    
+        const counterparties = largeGroup.map((p) => p.publicKey);
+    
+        // Step 2: Initialize CurvePoint instance
+        const curvePointSender = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'veryLargeGroupProtocol'];
+        const keyID = 'veryLargeGroupKey';
+    
+        // Step 3: Encrypt the message
+        const { encryptedMessage, header } = await curvePointSender.encrypt(
+            message,
+            protocolID,
+            keyID,
+            counterparties
+        );
+    
+        console.log('Header Length:', header.length);
+        console.log('Encrypted Message Length:', encryptedMessage.length);
+    
+        // Step 4: Validate encryption output
+        expect(header).toBeDefined();
+        expect(header.length).toBeGreaterThan(0);
+        expect(encryptedMessage).toBeDefined();
+        expect(encryptedMessage.length).toBeGreaterThan(0);
+    
+        // Step 5: Attempt decryption for a random participant in the very large group
+        const randomParticipant = largeGroup[Math.floor(Math.random() * largeGroup.length)];
+        const walletForRandomParticipant = new ProtoWallet(randomParticipant.privateKey);
+        const curvePointRecipient = new CurvePoint(walletForRandomParticipant);
+    
+        try {
+            console.log('Attempting decryption for a random participant...');
+            const decryptedMessage = await curvePointRecipient.decrypt(
+                [...header, ...encryptedMessage],
+                protocolID,
+                keyID
+            );
+    
+            // Validate that the decrypted message matches the original
+            expect(decryptedMessage).toEqual(message);
+            console.log('Decryption successful for a random participant in the very large group.');
+        } catch (error) {
+            console.error('Decryption failed for a random participant in the very large group.');
+            console.error(`Error: ${(error as Error).message}`);
+            throw error;
+        }
+    });
+    
+    // Chunked Encryption
+    test('Chunked Encryption', async () => {
+        const curvePoint = new CurvePoint(participants[0].wallet);
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'chunkedEncryption'];
+        const keyID = 'chunkedKey';
+    
+        // Create a large message
+        const largeMessage: number[] = Array(10_000).fill(1); // A message with 10,000 numbers
+    
+        // Split the large message into chunks (e.g., 1,000 per chunk)
+        const chunkSize = 1_000;
+        const chunks: number[][] = [];
+        for (let i = 0; i < largeMessage.length; i += chunkSize) {
+            chunks.push(largeMessage.slice(i, i + chunkSize));
+        }
+    
+        // Encrypt each chunk and save both headers and encrypted messages
+        const encryptedChunks = await Promise.all(
+            chunks.map((chunk, index) =>
+                curvePoint.encrypt(chunk, protocolID, `${keyID}-${index}`, participants.map((p) => p.publicKey))
+            )
+        );
+    
+        // Extract headers and encrypted messages into arrays
+        const headers: number[][] = encryptedChunks.map((chunk) => chunk.header);
+        const encryptedMessages: number[][] = encryptedChunks.map((chunk) => chunk.encryptedMessage);
+    
+        // Decrypt each chunk in order and reconstruct the original message
+        let reconstructedMessage: number[] = [];
+        for (let i = 0; i < encryptedMessages.length; i++) {
+            const header = headers[i];
+            const encryptedMessage = encryptedMessages[i];
+    
+            for (const participant of participants) {
+                const participantCurvePoint = new CurvePoint(participant.wallet);
+    
+                try {
+                    // Decrypt the chunk using the corresponding header and encrypted message
+                    const decryptedChunk = await participantCurvePoint.decrypt(
+                        [...header, ...encryptedMessage],
+                        protocolID,
+                        `${keyID}-${i}` // Match the keyID used for encryption
+                    );
+    
+                    // Append the decrypted chunk to the reconstructed message
+                    reconstructedMessage = reconstructedMessage.concat(decryptedChunk);
+                    break; // Break after successful decryption by the participant
+                } catch (error) {
+                    console.error(`Decryption failed for chunk ${i}: ${(error as Error).message}`);
+                }
+            }
+        }
+    
+        // Verify the reconstructed message matches the original
+        expect(reconstructedMessage).toEqual(largeMessage);
+    });
+    
+    // Encryption and Decryption Timing
+    test('Encryption and Decryption Timing', async () => {
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'timingTest'];
+        const keyID = 'timingKey';
+    
+        const groupSizes = [10, 100]; // Varying group sizes
+        const messageSizes = [100, 1000]; // Varying message sizes
+    
+        for (const groupSize of groupSizes) {
+            // Generate wallets for each participant in the group
+            const group: { privateKey: PrivateKey; publicKey: string }[] = Array(groupSize)
+                .fill(null)
+                .map(() => {
+                    const privateKey = PrivateKey.fromRandom();
+                    const publicKey = privateKey.toPublicKey().toDER('hex');
+                    if (typeof publicKey !== 'string') {
+                        throw new Error('Public key conversion to string failed.');
+                    }
+                    return { privateKey, publicKey };
+                });
+    
+            const groupPublicKeys = group.map((g) => g.publicKey);
+    
+            for (const messageSize of messageSizes) {
+                const message = Array(messageSize).fill(1); // Large message
+                const curvePoint = new CurvePoint(participants[0].wallet);
+    
+                // Measure encryption time
+                const startEncryption = performance.now();
+                const { encryptedMessage, header } = await curvePoint.encrypt(
+                    message,
+                    protocolID,
+                    keyID,
+                    groupPublicKeys
+                );
+                const endEncryption = performance.now();
+                console.log(
+                    `Encryption time for group size ${groupSize} and message size ${messageSize}: ${
+                        endEncryption - startEncryption
+                    } ms`
+                );
+    
+                // Decrypt for one of the participants in the group
+                const randomParticipant = group[Math.floor(Math.random() * group.length)];
+                const participantWallet = new ProtoWallet(randomParticipant.privateKey); // Use corresponding private key
+                const participantCurvePoint = new CurvePoint(participantWallet);
+    
+                // Measure decryption time
+                const startDecryption = performance.now();
+                const decryptedMessage = await participantCurvePoint.decrypt(
+                    [...header, ...encryptedMessage],
+                    protocolID,
+                    keyID
+                );
+                const endDecryption = performance.now();
+                console.log(
+                    `Decryption time for group size ${groupSize} and message size ${messageSize}: ${
+                        endDecryption - startDecryption
+                    } ms`
+                );
+    
+                // Verify the decrypted message matches the original
+                expect(decryptedMessage).toEqual(message);
+            }
+        }
+    });
+    
+    // Memory Usage
+    test('Memory Usage', async () => {
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'memoryTest'];
+        const keyID = 'memoryKey';
+    
+        const largeGroupSize = 250; // Large number of participants
+        const largeMessageSize = 100; // Large message
+        const largeGroup: { privateKey: PrivateKey; publicKey: string }[] = Array(largeGroupSize)
+            .fill(null)
+            .map(() => {
+                const privateKey = PrivateKey.fromRandom();
+                const publicKey = privateKey.toPublicKey().toDER('hex');
+                if (typeof publicKey !== 'string') {
+                    throw new Error('Public key conversion to string failed.');
+                }
+                return { privateKey, publicKey };
+            });
+    
+        const largeGroupPublicKeys = largeGroup.map((p) => p.publicKey);
+        const largeMessage = Array(largeMessageSize).fill(1);
+    
+        const curvePoint = new CurvePoint(participants[0].wallet);
+    
+        console.log('Memory usage before encryption:', process.memoryUsage());
+    
+        // Encrypt
+        const { encryptedMessage, header } = await curvePoint.encrypt(
+            largeMessage,
+            protocolID,
+            keyID,
+            largeGroupPublicKeys
+        );
+    
+        console.log('Memory usage after encryption:', process.memoryUsage());
+    
+        // Decrypt with a wallet matching one of the large group participants
+        const randomParticipant = largeGroup[Math.floor(Math.random() * largeGroup.length)];
+        const participantWallet = new ProtoWallet(randomParticipant.privateKey);
+        const participantCurvePoint = new CurvePoint(participantWallet);
+    
+        console.log('Attempting decryption with a random participant wallet...');
+        const decryptedMessage = await participantCurvePoint.decrypt(
+            [...header, ...encryptedMessage],
+            protocolID,
+            keyID
+        );
+    
+        console.log('Memory usage after decryption:', process.memoryUsage());
+    
+        expect(decryptedMessage).toEqual(largeMessage);
+    });
+    
+    // Cross-Wallet Compatibility
+    test('Cross-Wallet Compatibility', async () => {
+        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'crossWallet'];
+        const keyID = 'crossWalletKey';
+    
+        // Create wallets for two participants
+        const participant1 = new ProtoWallet(PrivateKey.fromRandom());
+        const participant2 = new ProtoWallet(PrivateKey.fromRandom());
+    
+        // Get public keys for the participants
+        const publicKey1 = (await participant1.getPublicKey({ identityKey: true })).publicKey;
+        const publicKey2 = (await participant2.getPublicKey({ identityKey: true })).publicKey;
+    
+        // Ensure public keys are available
+        expect(publicKey1).toBeDefined();
+        expect(publicKey2).toBeDefined();
+    
+        // Participant 1 encrypts a message for participant 2
+        const message = [1, 2, 3, 4];
+        const curvePoint1 = new CurvePoint(participant1);
+    
+        const { encryptedMessage, header } = await curvePoint1.encrypt(
+            message,
+            protocolID,
+            keyID,
+            [publicKey2]
+        );
+    
+        // Participant 2 decrypts the message
+        const curvePoint2 = new CurvePoint(participant2);
+        const decryptedMessage = await curvePoint2.decrypt(
+            [...header, ...encryptedMessage],
+            protocolID,
+            keyID
+        );
+    
+        // Verify the decrypted message matches the original
+        expect(decryptedMessage).toEqual(message);
+    });
+    
+    // Protocol Compatibility
+    test('Protocol Compatibility', async () => {
+        const keyID = 'protocolTestKey';
+        const protocolIDs: [SecurityLevel, string][] = [
+            [SecurityLevels.Silent, 'protocolSilent'],
+            [SecurityLevels.App, 'protocolApp'],
+            [SecurityLevels.Counterparty, 'protocolCounterparty'],
+        ];
+    
+        const curvePoint = new CurvePoint(participants[0].wallet);
+    
+        // Encrypt and decrypt a message for each protocolID
+        for (const protocolID of protocolIDs) {
+            const message = [42, 43, 44, 45]; // Example message
+            const counterparties = participants.map((p) => p.publicKey);
+    
+            // Encrypt the message
+            const { encryptedMessage, header } = await curvePoint.encrypt(
+                message,
+                protocolID,
+                keyID,
+                counterparties
+            );
+    
+            // Ensure each participant can decrypt the message
+            for (const participant of participants) {
+                const participantCurvePoint = new CurvePoint(participant.wallet);
+                const decryptedMessage = await participantCurvePoint.decrypt(
+                    [...header, ...encryptedMessage],
+                    protocolID,
+                    keyID
+                );
+    
+                // Verify the decrypted message matches the original
+                expect(decryptedMessage).toEqual(message);
+            }
+        }
+    });
     
 });

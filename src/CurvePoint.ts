@@ -26,73 +26,82 @@ export class CurvePoint {
     }
 
     /**
-     * Encrypts a message for a group of recipients.
-     * 
-     * @param message - The plaintext message to encrypt as an array of bytes.
-     * @param protocolID - The protocol ID defining cryptographic context.
-     * @param keyID - A unique identifier for the key used.
-     * @param recipients - An array of recipient public keys in hex format.
-     * @param administrators - (Optional) An array of administrator public keys.
-     * @returns An object containing the encrypted message and the message header.
-     */
-    async encrypt(
-        message: number[],
-        protocolID: WalletProtocol,
-        keyID: string,
-        recipients: string[],
-        administrators?: string[]
-    ): Promise<{ encryptedMessage: number[]; header: number[] }> {
-        try {
-            // Step 1: Generate the symmetric key for message encryption
-            const symmetricKey = SymmetricKey.fromRandom();
-    
-            // Step 2: Encrypt the message with the symmetric key
-            const encryptedMessage = symmetricKey.encrypt(message);
-    
-            // Step 3: Retrieve the sender's public key
-            const { publicKey: senderPublicKey } = await this.wallet.getPublicKey({ identityKey: true });
-    
-            // Step 4: Ensure the sender is in the administrators list
-            if (!administrators) {
-                administrators = [senderPublicKey]; // Default to sender as the sole administrator
-            } else if (!administrators.includes(senderPublicKey)) {
-                administrators.unshift(senderPublicKey); // Add sender if not already present
-            }
-
-            // Validate administrator public keys
-            for (const admin of administrators) {
-                if (admin.length !== 66) { // Validate 33-byte compressed DER format
-                    throw new Error(`Invalid administrator public key: ${admin}`);
-                }
-            }
-
-            // Step 5: Encrypt the symmetric key for each recipient
-            const encryptedKeys = await Promise.all(
-                recipients.map(async (recipient) => {
-                    const encryptedKey = await this.wallet.encrypt({
-                        protocolID,
-                        keyID,
-                        counterparty: recipient, // Recipient's public key
-                        plaintext: symmetricKey.toArray(), // Symmetric key as plaintext
-                    });
-    
-                    return {
-                        ciphertext: encryptedKey.ciphertext as number[],
-                    };
-                })
-            );
-    
-            const version = 0x00000000;
-
-            // Step 6: Build the header
-            const header = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators, version);
-    
-            return { encryptedMessage: encryptedMessage as number[], header };
-        } catch (error) {
-            console.error(`Encryption failed: ${(error as Error).message}`);
-            throw new Error(`Encryption failed: ${(error as Error).message}`);
+ * Encrypts a message for a group of recipients.
+ * 
+ * @param message - The plaintext message to encrypt as an array of bytes.
+ * @param protocolID - The protocol ID defining cryptographic context.
+ * @param keyID - A unique identifier for the key used.
+ * @param recipients - An array of recipient public keys in hex format.
+ * @param administrators - (Optional) An array of administrator public keys.
+ * @returns An object containing the encrypted message and the message header.
+ * @throws Will throw an error if no recipients are provided or if invalid administrator keys are present.
+ */
+async encrypt(
+    message: number[],
+    protocolID: WalletProtocol,
+    keyID: string,
+    recipients: string[],
+    administrators?: string[]
+): Promise<{ encryptedMessage: number[]; header: number[] }> {
+    try {
+        // Step 1: Validate recipients
+        if (recipients.length === 0) {
+            throw new Error('No recipients specified for encryption.');
         }
+
+        // Ensure recipients are unique
+        const uniqueRecipients = Array.from(new Set(recipients));
+
+        // Step 2: Generate the symmetric key for message encryption
+        const symmetricKey = SymmetricKey.fromRandom();
+
+        // Step 3: Encrypt the message with the symmetric key
+        const encryptedMessage = symmetricKey.encrypt(message);
+
+        // Step 4: Retrieve the sender's public key
+        const { publicKey: senderPublicKey } = await this.wallet.getPublicKey({ identityKey: true });
+
+        // Step 5: Ensure the sender is in the administrators list
+        if (!administrators) {
+            administrators = [senderPublicKey]; // Default to sender as the sole administrator
+        } else if (!administrators.includes(senderPublicKey)) {
+            administrators.unshift(senderPublicKey); // Add sender if not already present
+        }
+
+        // Validate administrator public keys
+        for (const admin of administrators) {
+            if (admin.length !== 66) { // Validate 33-byte compressed DER format
+                throw new Error(`Invalid administrator public key: ${admin}`);
+            }
+        }
+
+        // Step 6: Encrypt the symmetric key for each unique recipient
+        const encryptedKeys = await Promise.all(
+            uniqueRecipients.map(async (recipient) => {
+                const encryptedKey = await this.wallet.encrypt({
+                    protocolID,
+                    keyID,
+                    counterparty: recipient, // Recipient's public key
+                    plaintext: symmetricKey.toArray(), // Symmetric key as plaintext
+                });
+
+                return {
+                    ciphertext: encryptedKey.ciphertext as number[],
+                };
+            })
+        );
+
+        const version = 0x00000000;
+
+        // Step 7: Build the header
+        const header = this.buildHeader(senderPublicKey, uniqueRecipients, encryptedKeys, administrators, version);
+
+        return { encryptedMessage: encryptedMessage as number[], header };
+    } catch (error) {
+        console.error(`Encryption failed: ${(error as Error).message}`);
+        throw new Error(`Encryption failed: ${(error as Error).message}`);
     }
+}
 
     /**
      * Decrypts a message intended for the recipient.
