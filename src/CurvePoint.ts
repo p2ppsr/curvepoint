@@ -32,16 +32,14 @@ export class CurvePoint {
  * @param protocolID - The protocol ID defining cryptographic context.
  * @param keyID - A unique identifier for the key used.
  * @param recipients - An array of recipient public keys in hex format.
- * @param administrators - (Optional) An array of administrator public keys.
  * @returns An object containing the encrypted message and the message header.
- * @throws Will throw an error if no recipients are provided or if invalid administrator keys are present.
+ * @throws Will throw an error if no recipients are provided.
  */
 async encrypt(
     message: number[],
     protocolID: WalletProtocol,
     keyID: string,
     recipients: string[],
-    administrators?: string[]
 ): Promise<{ encryptedMessage: number[]; header: number[] }> {
     try {
         // Step 1: Validate recipients
@@ -61,21 +59,7 @@ async encrypt(
         // Step 4: Retrieve the sender's public key
         const { publicKey: senderPublicKey } = await this.wallet.getPublicKey({ identityKey: true });
 
-        // Step 5: Ensure the sender is in the administrators list
-        if (!administrators) {
-            administrators = [senderPublicKey]; // Default to sender as the sole administrator
-        } else if (!administrators.includes(senderPublicKey)) {
-            administrators.unshift(senderPublicKey); // Add sender if not already present
-        }
-
-        // Validate administrator public keys
-        for (const admin of administrators) {
-            if (admin.length !== 66) { // Validate 33-byte compressed DER format
-                throw new Error(`Invalid administrator public key: ${admin}`);
-            }
-        }
-
-        // Step 6: Encrypt the symmetric key for each unique recipient
+        // Step 5: Encrypt the symmetric key for each unique recipient
         const encryptedKeys = await Promise.all(
             uniqueRecipients.map(async (recipient) => {
                 const encryptedKey = await this.wallet.encrypt({
@@ -93,8 +77,8 @@ async encrypt(
 
         const version = 0x00000000;
 
-        // Step 7: Build the header
-        const header = this.buildHeader(senderPublicKey, uniqueRecipients, encryptedKeys, administrators, version);
+        // Step 6: Build the header
+        const header = this.buildHeader(senderPublicKey, uniqueRecipients, encryptedKeys, version);
 
         return { encryptedMessage: encryptedMessage as number[], header };
     } catch (error) {
@@ -141,11 +125,11 @@ async encrypt(
                 try {
                     // Read recipient's public key
                     const recipientPublicKeyBytes = reader.read(33);
-                    const recipientKey = Buffer.from(recipientPublicKeyBytes).toString('hex');
+                    const recipientKey = Utils.toHex(recipientPublicKeyBytes);
     
                     // Read sender's public key
                     const senderPublicKeyBytes = reader.read(33);
-                    const senderKey = Buffer.from(senderPublicKeyBytes).toString('hex');
+                    const senderKey = Utils.toHex(senderPublicKeyBytes);
     
                     // Read length of the encrypted symmetric key
                     const encryptedKeyLength = reader.readVarIntNum();
@@ -179,13 +163,13 @@ async encrypt(
                 }
             }
     
-            // Step 7: Handle errors if no symmetric key was found
+            // Step 5: Handle errors if no symmetric key was found
             if (!symmetricKey) {
                 console.error('No matching symmetric key found in the header.');
                 throw new Error('Your key is not found in the header.');
             }
     
-            // Step 8: Decrypt the message with the symmetric key
+            // Step 6: Decrypt the message with the symmetric key
             const decryptedMessage = symmetricKey.decrypt(message) as number[];
             return decryptedMessage;
         } catch (error) {
@@ -195,12 +179,11 @@ async encrypt(
     }
 
     /**
-     * Builds a message header containing recipient and administrator information.
+     * Builds a message header containing recipient information.
      * 
      * @param senderPublicKey - The sender's public key in hex format.
      * @param recipients - An array of recipient public keys in hex format.
      * @param encryptedKeys - An array of objects containing encrypted symmetric keys.
-     * @param administrators - An array of administrator public keys in hex format.
      * @param currentVersion - The current header version number.
      * @returns The constructed header as an array of bytes.
      */
@@ -208,7 +191,6 @@ async encrypt(
         senderPublicKey: string,
         recipients: string[],
         encryptedKeys: { ciphertext: number[] }[],
-        administrators: string[],
         currentVersion: number
     ): number[] {
         const writer = new Utils.Writer();
@@ -256,8 +238,8 @@ async encrypt(
     
         // Step 5: Write each recipient's entry
         cleanedRecipients.forEach((recipient, i) => {
-            const recipientPublicKey = Array.from(Buffer.from(recipient, 'hex'));
-            const senderPublicKeyBytes = Array.from(Buffer.from(senderPublicKey, 'hex'));
+            const recipientPublicKey = Utils.toArray(recipient, 'hex');
+            const senderPublicKeyBytes = Utils.toArray(senderPublicKey, 'hex');
             const encryptedKey = cleanedEncryptedKeys[i].ciphertext;
     
             // Write recipient's public key (33 bytes)
@@ -272,32 +254,11 @@ async encrypt(
             // Write the encrypted symmetric key
             writer.write(encryptedKey);
         });
-    
-        // Step 6: Add the administrators section
-        if (!administrators || administrators.length === 0) {
-            throw new Error('Administrators list cannot be empty.');
-        }
 
-        // Validate administrator keys
-        administrators.forEach((admin, index) => {
-            if (!validatePublicKey(admin)) {
-                throw new Error(`Invalid administrator public key at index ${index}: ${admin}`);
-            }
-        });
-
-        // Write the number of administrators
-        writer.writeVarIntNum(administrators.length);
-
-        // Write each administrator's public key
-        administrators.forEach((admin, i) => {
-            const adminPublicKey = Array.from(Buffer.from(admin, 'hex'));
-            writer.write(adminPublicKey);
-        });
-
-        // Step 7: Get the full header content
+        // Step 6: Get the full header content
         const headerContent = writer.toArray();
     
-        // Step 8: Prepend the length of the header
+        // Step 7: Prepend the length of the header
         const finalWriter = new Utils.Writer();
         finalWriter.writeVarIntNum(headerContent.length); // Prepend the length
         finalWriter.write(headerContent); // Append the full header content
@@ -311,9 +272,9 @@ async encrypt(
      * Parses a message header and extracts key information.
      * 
      * @param ciphertext - The ciphertext containing the header and message.
-     * @returns An object containing the parsed header, message, and administrator list.
+     * @returns An object containing the parsed header, and message.
      */
-    parseHeader(ciphertext: number[]): { header: number[]; message: number[]; administrators: string[] } {
+    parseHeader(ciphertext: number[]): { header: number[]; message: number[]; } {
         try {
             const reader = new Utils.Reader(ciphertext);
 
@@ -370,36 +331,17 @@ async encrypt(
                 }
 
                 recipients.push({
-                    recipientPublicKey: Buffer.from(recipientKey).toString('hex'),
-                    senderPublicKey: Buffer.from(senderKey).toString('hex'),
+                    recipientPublicKey: Utils.toHex(recipientKey),
+                    senderPublicKey: Utils.toHex(senderKey),
                     encryptedKey: encryptedKey,
                 });
             }
-    
-            // Step 6: Read and validate the administrators section
-            const numAdministrators = tempReader.readVarIntNum();
 
-            if (numAdministrators < 1) {
-                throw new Error('No administrators found in the header.');
-            }
-
-            const administrators = [];
-            for (let i = 0; i < numAdministrators; i++) {
-                const adminKey = tempReader.read(33);
-                if (adminKey.length !== 33) {
-                    console.warn(`Skipping malformed administrator key at index ${i}: invalid key length.`);
-                    continue;
-                }
-                const adminPublicKey = Buffer.from(adminKey).toString('hex');
-
-                administrators.push(adminPublicKey);
-            }
-
-            // Step 7: Extract remaining message
+            // Step 6: Extract remaining message
             const remainingBytes = reader.bin.slice(reader.pos);
             const message = remainingBytes.length > 0 ? remainingBytes : [];
 
-            return { header, message, administrators };
+            return { header, message };
         } catch (error) {
             console.error(`Error Parsing Header: ${(error as Error).message}`);
             throw new Error('Failed to parse header or message.');
@@ -423,7 +365,7 @@ async encrypt(
     ): Promise<number[]> {
         try {
             // Step 1: Parse the header
-            const { header, message, administrators } = this.parseHeader(iheader);
+            const { header, message } = this.parseHeader(iheader);
             const reader = new Utils.Reader(header);
     
             // Step 2: Read and validate the version
@@ -450,7 +392,7 @@ async encrypt(
                         console.warn(`Skipping malformed entry at index ${i}: Invalid recipient key length`);
                         continue;
                     }
-                    const recipientPublicKey = Buffer.from(recipientPublicKeyBytes).toString('hex');
+                    const recipientPublicKey = Utils.toHex(recipientPublicKeyBytes);
     
                     // Read sender public key
                     const senderPublicKeyBytes = reader.read(33);
@@ -458,7 +400,7 @@ async encrypt(
                         console.warn(`Skipping malformed entry at index ${i}: Invalid sender key length`);
                         continue;
                     }
-                    senderPublicKey = Buffer.from(senderPublicKeyBytes).toString('hex');
+                    senderPublicKey = Utils.toHex(senderPublicKeyBytes);
     
                     // Read and validate encrypted key
                     const encryptedKeyLength = reader.readVarIntNum();
@@ -508,8 +450,8 @@ async encrypt(
             recipients.push(newParticipant);
             encryptedKeys.push({ ciphertext: newEncryptedKey.ciphertext as number[] });
 
-            // Step 7: Reconstruct the updated header
-            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators, version);
+            // Step 6: Reconstruct the updated header
+            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, version);
 
             return updatedHeader;
         } catch (error) {
@@ -520,7 +462,6 @@ async encrypt(
 
     /**
      * Removes a participant from the message group.
-     * Only administrators are authorized to perform this action.
      * 
      * @param iheader - The original message header as an array of bytes.
      * @param targetParticipant - The public key of the participant to remove in hex format.
@@ -529,7 +470,7 @@ async encrypt(
     async removeParticipant(iheader: number[], targetParticipant: string): Promise<number[]> {
         try {
             // Step 1: Parse the header
-            const { header, message, administrators } = this.parseHeader(iheader);
+            const { header, message } = this.parseHeader(iheader);
             const reader = new Utils.Reader(header);
     
             // Step 2: Read and validate the version
@@ -538,15 +479,8 @@ async encrypt(
             if (version < 1) {
                 throw new Error(`Unsupported header version: ${version}`);
             }
-    
-            // Step 3: Check if the current user is an administrator
-            const { publicKey: userPublicKey } = await this.wallet.getPublicKey({ identityKey: true });
 
-            if (!administrators.includes(userPublicKey)) {
-                throw new Error('Only administrators are allowed to remove participants.');
-            }
-
-            // Step 4: Read the number of recipients
+            // Step 3: Read the number of recipients
             const numRecipients = reader.readVarIntNum();
 
             if (numRecipients <= 0) {
@@ -557,7 +491,7 @@ async encrypt(
             const encryptedKeys: { ciphertext: number[] }[] = [];
             let senderPublicKey: string | null = null;
     
-            // Step 5: Parse recipient entries and exclude the target participant
+            // Step 4: Parse recipient entries and exclude the target participant
             for (let i = 0; i < numRecipients; i++) {
                 try {
                     // Read recipient public key (fixed 33 bytes)
@@ -566,7 +500,7 @@ async encrypt(
                         console.warn(`Skipping malformed entry at index ${i}: Invalid recipient key length`);
                         continue;
                     }
-                    const recipientPublicKey = Buffer.from(recipientPublicKeyBytes).toString('hex');
+                    const recipientPublicKey = Utils.toHex(recipientPublicKeyBytes);
     
                     // Read sender public key (fixed 33 bytes)
                     const senderPublicKeyBytes = reader.read(33);
@@ -574,7 +508,7 @@ async encrypt(
                         console.warn(`Skipping malformed entry at index ${i}: Invalid sender key length`);
                         continue;
                     }
-                    senderPublicKey = Buffer.from(senderPublicKeyBytes).toString('hex');
+                    senderPublicKey = Utils.toHex(senderPublicKeyBytes);
     
                     // Read and validate encrypted key
                     const encryptedKeyLength = reader.readVarIntNum();
@@ -600,14 +534,13 @@ async encrypt(
                 throw new Error('Sender public key not found in the header.');
             }
     
-
             // Step 5: Ensure the target participant was successfully removed
             if (recipients.includes(targetParticipant)) {
                 throw new Error('Failed to remove participant from the header.');
             }
     
             // Step 6: Reconstruct the updated header
-            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, administrators, version);
+            const updatedHeader = this.buildHeader(senderPublicKey, recipients, encryptedKeys, version);
 
             return updatedHeader;
         } catch (error) {

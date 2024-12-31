@@ -425,45 +425,6 @@ describe('CurvePoint Library', () => {
         }
     });
     
-    // Administrator Restriction: Only administrators can revoke access
-    test('Administrator Restriction: Only administrators can revoke access', async () => {
-        // Step 1: Initialize CurvePoint for the sender
-        const admin = participants[0]; // Sender is also an admin
-        const nonAdmin = participants[1]; // Non-admin participant
-        const targetParticipant = participants[2]; // Participant to be revoked
-        const curvePointAdmin = new CurvePoint(admin.wallet);
-        const curvePointNonAdmin = new CurvePoint(nonAdmin.wallet);
-        const protocolID: [SecurityLevel, string] = [SecurityLevels.App, 'adminRestrictionProtocol'];
-        const keyID = 'adminKey';
-    
-        // Step 2: Encrypt the message with all participants and specify administrators
-        const counterparties = participants.map((p) => p.publicKey);
-        const { encryptedMessage, header } = await curvePointAdmin.encrypt(
-            message,
-            protocolID,
-            keyID,
-            counterparties,
-            [admin.publicKey] // Admin list
-        );
-    
-        console.log('Original Header with Admins:', header);
-    
-        // Step 3: Admin revokes access for the target participant
-        const updatedHeader = await curvePointAdmin.removeParticipant(header, targetParticipant.publicKey);
-        console.log('Updated Header after Admin Revocation:', updatedHeader);
-    
-        // Verify the target participant is no longer in the header
-        const curvePointTarget = new CurvePoint(targetParticipant.wallet);
-        await expect(
-            curvePointTarget.decrypt([...updatedHeader, ...encryptedMessage], protocolID, keyID)
-        ).rejects.toThrow('Your key is not found in the header.');
-    
-        // Step 4: Non-admin attempts to revoke access
-        await expect(
-            curvePointNonAdmin.removeParticipant(header, targetParticipant.publicKey)
-        ).rejects.toThrow('Failed to remove participant.');
-    });
-    
     // Access Granting: Grant new participant access to a previously encrypted message
     test('Access Granting: Grant new participant access to a previously encrypted message', async () => {
         const curvePoint = new CurvePoint(participants[0].wallet);
