@@ -1,6 +1,6 @@
 {
-  "name": "@p2ppsr/curvepoint",
-  "version": "0.1.0",
+  "name": "curvepoint",
+  "version": "1.0.1",
   "type": "module",
   "description": "CurvePoint: A secure and flexible group messaging solution for blockchain applications.",
   "main": "dist/cjs/mod.js",
