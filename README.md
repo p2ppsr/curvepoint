@@ -191,7 +191,7 @@ Argument Details
 ## Encrypt and Decrypt a Message
 
 ```ts
-import { CurvePoint } from '@p2ppsr/curvepoint';
+import { CurvePoint } from 'curvepoint';
 import { Wallet } from '@bsv/sdk';
 
 // Step 1: Initialize a wallet instance
