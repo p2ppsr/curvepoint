@@ -15,7 +15,7 @@ import { WalletProtocol } from '@bsv/sdk';
 
 export class CurvePoint {
     private wallet: WalletInterface;
-    private cachedKey?: string;
+    private cachedIdentityKey?: string;
 
     /**
      * Initializes a new CurvePoint instance.
@@ -31,12 +31,11 @@ export class CurvePoint {
      * @returns The cached identity public key in hex format. If not cached, retrieves it from the wallet and caches it.
      */
     private async getIdentityKey(): Promise<string> {
-        if (!this.cachedKey) {
+        if (!this.cachedIdentityKey) {
             const { publicKey } = await this.wallet.getPublicKey({ identityKey: true })
-            this.cachedKey = publicKey
-            console.log('[CurvePoint] Cached identity key:', publicKey)
+            this.cachedIdentityKey = publicKey
         }
-        return this.cachedKey
+        return this.cachedIdentityKey
     }
 
     /**
