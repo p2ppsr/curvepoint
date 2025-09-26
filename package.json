@@ -64,6 +64,6 @@
     "typescript-eslint": "^8.17.0"
   },
   "dependencies": {
-    "@bsv/sdk": "^1.6.23"
+    "@bsv/sdk": "^1.7.6"
   }
 }

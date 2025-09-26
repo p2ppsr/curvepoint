@@ -15,6 +15,7 @@ import { WalletProtocol } from '@bsv/sdk';
 
 export class CurvePoint {
     private wallet: WalletInterface;
+    private cachedKey?: string;
 
     /**
      * Initializes a new CurvePoint instance.
@@ -23,6 +24,19 @@ export class CurvePoint {
      */
     constructor(wallet: WalletInterface) {
         this.wallet = wallet;
+    }
+
+    /**
+     * Retrieves the identity public key for the wallet.
+     * @returns The cached identity public key in hex format. If not cached, retrieves it from the wallet and caches it.
+     */
+    private async getIdentityKey(): Promise<string> {
+        if (!this.cachedKey) {
+            const { publicKey } = await this.wallet.getPublicKey({ identityKey: true })
+            this.cachedKey = publicKey
+            console.log('[CurvePoint] Cached identity key:', publicKey)
+        }
+        return this.cachedKey
     }
 
     /**
@@ -57,7 +71,7 @@ export class CurvePoint {
             const encryptedMessage = symmetricKey.encrypt(message);
 
             // Step 4: Retrieve the sender's public key
-            const { publicKey: senderPublicKey } = await this.wallet.getPublicKey({ identityKey: true });
+            const senderPublicKey = await this.getIdentityKey();
 
             // Step 5: Encrypt the symmetric key for each unique recipient
             const encryptedKeys = await Promise.all(
@@ -105,9 +119,7 @@ export class CurvePoint {
             const { header, message } = this.parseHeader(ciphertext);
 
             // Step 2: Retrieve the recipient's public key
-            const { publicKey: recipientPublicKey } = await this.wallet.getPublicKey({
-                identityKey: true,
-            });
+            const recipientPublicKey = await this.getIdentityKey();
 
             // Step 3: Parse the header
             const reader = new Utils.Reader(header);
