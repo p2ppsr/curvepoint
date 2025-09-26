@@ -16,7 +16,8 @@ import { WalletProtocol } from '@bsv/sdk';
 export class CurvePoint {
     private wallet: WalletInterface;
     private cachedKey: string | null = null;
-private keyPromise: Promise<string> | null = null;
+    private keyPromise: Promise<string> | null = null;
+
 
     /**
      * Initializes a new CurvePoint instance.
