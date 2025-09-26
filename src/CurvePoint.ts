@@ -34,25 +34,19 @@ export class CurvePoint {
      */
     private async getIdentityKey(): Promise<string> {
         if (this.cachedKey) {
-            console.log("[CurvePoint] Using cached identity key:", this.cachedKey);
             return this.cachedKey;
         }
 
         // If a request is already in progress, wait for it
         if (this.keyPromise) {
-            console.log("[CurvePoint] Waiting for existing keyPromise...");
             return this.keyPromise;
         }
 
         // Otherwise, start the fetch and cache the promise
         this.keyPromise = (async () => {
-            console.log("[CurvePoint] Fetching new identity key from wallet…");
-            console.log("[CurvePoint] Calling wallet.getPublicKey…");
             try {
             const result = await this.wallet.getPublicKey({ identityKey: true });
             this.cachedKey = result.publicKey;
-            console.log("[CurvePoint] wallet.getPublicKey returned:", result);
-            console.log("[CurvePoint] Cached identity key:", this.cachedKey);
             return this.cachedKey;
             } catch (err) {
             console.error("[CurvePoint] wallet.getPublicKey threw:", err);
