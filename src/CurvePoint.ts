@@ -15,7 +15,8 @@ import { WalletProtocol } from '@bsv/sdk';
 
 export class CurvePoint {
     private wallet: WalletInterface;
-    private cachedKey?: string;
+    private cachedKey: string | null = null;
+private keyPromise: Promise<string> | null = null;
 
     /**
      * Initializes a new CurvePoint instance.
@@ -31,13 +32,38 @@ export class CurvePoint {
      * @returns The cached identity public key in hex format. If not cached, retrieves it from the wallet and caches it.
      */
     private async getIdentityKey(): Promise<string> {
-        if (!this.cachedKey) {
-            const { publicKey } = await this.wallet.getPublicKey({ identityKey: true })
-            this.cachedKey = publicKey
-            console.log('[CurvePoint] Cached identity key:', publicKey)
+        if (this.cachedKey) {
+            console.log("[CurvePoint] Using cached identity key:", this.cachedKey);
+            return this.cachedKey;
         }
-        return this.cachedKey
-    }
+
+        // If a request is already in progress, wait for it
+        if (this.keyPromise) {
+            console.log("[CurvePoint] Waiting for existing keyPromise...");
+            return this.keyPromise;
+        }
+
+        // Otherwise, start the fetch and cache the promise
+        this.keyPromise = (async () => {
+            console.log("[CurvePoint] Fetching new identity key from wallet…");
+            console.log("[CurvePoint] Calling wallet.getPublicKey…");
+            try {
+            const result = await this.wallet.getPublicKey({ identityKey: true });
+            this.cachedKey = result.publicKey;
+            console.log("[CurvePoint] wallet.getPublicKey returned:", result);
+            console.log("[CurvePoint] Cached identity key:", this.cachedKey);
+            return this.cachedKey;
+            } catch (err) {
+            console.error("[CurvePoint] wallet.getPublicKey threw:", err);
+            throw err;
+            } finally {
+            // Clear the promise once resolved/rejected so retries work
+            this.keyPromise = null;
+            }
+        })();
+
+        return this.keyPromise;
+        }
 
     /**
  * Encrypts a message for a group of recipients.
