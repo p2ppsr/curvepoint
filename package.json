@@ -1,6 +1,6 @@
 {
   "name": "curvepoint",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "type": "module",
   "description": "CurvePoint: A secure and flexible group messaging solution for blockchain applications.",
   "main": "dist/cjs/mod.js",
