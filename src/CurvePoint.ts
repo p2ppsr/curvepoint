@@ -60,6 +60,35 @@ export class CurvePoint {
         return this.keyPromise;
         }
 
+    private async deriveSymmetricKeyFromEntries(
+        entries: Array<{ senderPublicKey: string; encryptedKey: number[] }>,
+        protocolID: WalletProtocol,
+        keyID: string,
+    ): Promise<SymmetricKey | null> {
+        if (entries.length === 0) {
+            return null;
+        }
+
+        const decryptionAttempts = await Promise.allSettled(
+            entries.map((entry) =>
+                this.wallet.decrypt({
+                    protocolID,
+                    keyID,
+                    counterparty: entry.senderPublicKey,
+                    ciphertext: entry.encryptedKey,
+                })
+            )
+        );
+
+        for (const attempt of decryptionAttempts) {
+            if (attempt.status === 'fulfilled' && attempt.value?.plaintext) {
+                return new SymmetricKey(attempt.value.plaintext);
+            }
+        }
+
+        return null;
+    }
+
     /**
  * Encrypts a message for a group of recipients.
  * 
@@ -136,13 +165,12 @@ export class CurvePoint {
         keyID: string
     ): Promise<number[]> {
         try {
+            const identityKeyPromise = this.getIdentityKey();
+
             // Step 1: Parse the header and message
             const { header, message } = this.parseHeader(ciphertext);
 
-            // Step 2: Retrieve the recipient's public key
-            const recipientPublicKey = await this.getIdentityKey();
-
-            // Step 3: Parse the header
+            // Step 2: Parse the header
             const reader = new Utils.Reader(header);
 
             // Read version
@@ -151,58 +179,52 @@ export class CurvePoint {
             // Read number of recipients
             const numRecipients = reader.readVarIntNum();
 
-            let symmetricKey: SymmetricKey | null = null;
+            const entries: Array<{
+                recipientPublicKey: string;
+                senderPublicKey: string;
+                encryptedKey: number[];
+            }> = [];
 
-            // Step 4: Iterate through recipients in the header
+            // Step 3: Collect recipient entries from the header
             for (let i = 0; i < numRecipients; i++) {
                 try {
-                    // Read recipient's public key
                     const recipientPublicKeyBytes = reader.read(33);
-                    const recipientKey = Utils.toHex(recipientPublicKeyBytes);
-
-                    // Read sender's public key
                     const senderPublicKeyBytes = reader.read(33);
-                    const senderKey = Utils.toHex(senderPublicKeyBytes);
-
-                    // Read length of the encrypted symmetric key
                     const encryptedKeyLength = reader.readVarIntNum();
-
-                    // Read the encrypted symmetric key
                     const encryptedKey = reader.read(encryptedKeyLength);
 
-                    // Check if this recipient key matches the recipient's public key
-                    if (recipientKey === recipientPublicKey) {
-
-                        // Step 5: Decrypt the symmetric key using the sender's public key as counterparty
-                        try {
-                            const decryptedResults = await this.wallet.decrypt({
-                                protocolID,
-                                keyID,
-                                counterparty: senderKey, // Sender's public key from header
-                                ciphertext: encryptedKey,
-                            });
-
-                            // Step 6: Derive the symmetric key
-                            symmetricKey = new SymmetricKey(decryptedResults.plaintext);
-                            break; // Exit the loop as the symmetric key is successfully derived
-                        } catch (error) {
-                            console.error(`Decryption failed!`);
-                            // Continue processing other entries without breaking the loop
-                            continue;
-                        }
-                    }
+                    entries.push({
+                        recipientPublicKey: Utils.toHex(recipientPublicKeyBytes),
+                        senderPublicKey: Utils.toHex(senderPublicKeyBytes),
+                        encryptedKey,
+                    });
                 } catch (error) {
-                    console.error('Failed to process recipient entry: ${(error as Error).message}');
+                    console.error(`Failed to process recipient entry at index ${i}: ${(error as Error).message}`);
                 }
             }
 
-            // Step 5: Handle errors if no symmetric key was found
+            // Step 4: Retrieve the recipient's public key
+            const recipientPublicKey = await identityKeyPromise;
+
+            const decryptCandidates = entries
+                .filter((entry) => entry.recipientPublicKey === recipientPublicKey)
+                .map((entry) => ({
+                    senderPublicKey: entry.senderPublicKey,
+                    encryptedKey: entry.encryptedKey,
+                }));
+
+            const symmetricKey = await this.deriveSymmetricKeyFromEntries(
+                decryptCandidates,
+                protocolID,
+                keyID,
+            );
+
             if (!symmetricKey) {
                 console.error('No matching symmetric key found in the header.');
                 throw new Error('Your key is not found in the header.');
             }
 
-            // Step 6: Decrypt the message with the symmetric key
+            // Step 5: Decrypt the message with the symmetric key
             const decryptedMessage = symmetricKey.decrypt(message) as number[];
             return decryptedMessage;
         } catch (error) {
@@ -398,7 +420,7 @@ export class CurvePoint {
     ): Promise<number[]> {
         try {
             // Step 1: Parse the header
-            const { header, message } = this.parseHeader(iheader);
+            const { header } = this.parseHeader(iheader);
             const reader = new Utils.Reader(header);
 
             // Step 2: Read and validate the version
@@ -414,7 +436,7 @@ export class CurvePoint {
             const recipients: string[] = [];
             const encryptedKeys: { ciphertext: number[] }[] = [];
             let senderPublicKey: string | null = null;
-            let symmetricKey: SymmetricKey | null = null;
+            const decryptCandidates: Array<{ senderPublicKey: string; encryptedKey: number[] }> = [];
 
             // Step 4: Parse recipient entries
             for (let i = 0; i < numRecipients; i++) {
@@ -446,18 +468,7 @@ export class CurvePoint {
                     // Add to recipients and keys
                     recipients.push(recipientPublicKey);
                     encryptedKeys.push({ ciphertext: encryptedKey });
-
-                    // Extract symmetric key for the first valid recipient
-                    if (!symmetricKey) {
-                        const decryptedResults = await this.wallet.decrypt({
-                            protocolID,
-                            keyID,
-                            counterparty: senderPublicKey,
-                            ciphertext: encryptedKey,
-                        });
-                        symmetricKey = new SymmetricKey(decryptedResults.plaintext);
-
-                    }
+                    decryptCandidates.push({ senderPublicKey, encryptedKey });
                 } catch (err) {
                     console.warn(`Error parsing recipient entry at index ${i}:`, err);
                     continue;
@@ -472,6 +483,12 @@ export class CurvePoint {
             }
 
             // Step 6: Encrypt the symmetric key for the new participant
+            const symmetricKey = await this.deriveSymmetricKeyFromEntries(
+                decryptCandidates,
+                protocolID,
+                keyID,
+            );
+
             if (!symmetricKey) throw new Error('Symmetric key not found in the header.');
             const newEncryptedKey = await this.wallet.encrypt({
                 protocolID,
