@@ -256,3 +256,10 @@ try {
 Links: [API](#api), [Classes](#classes)
 
 ---
+
+
+## October2026 build runtime maintenance
+
+Build qualification uses patched Node22.23.4 and the frozen historical lock;
+`--legacy-peer-deps` retains the original npm6 peer-resolution contract.
+Application dependency versions and public client compatibility are unchanged.
